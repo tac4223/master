@@ -227,11 +227,8 @@ class leafbank:
         self.header["filename"] = filename
         self.header["side"] = filename[0]
 
-        self.read_data(filename)
-        self.build_header(filename)
-        self.build_beam()
-        self.build_gantry()
-        self.build_mlc()
+        self.read_data()
+
     def read_data(self):
         """
         Beschreibung
@@ -620,10 +617,9 @@ class plan:
             self.check_plan()
 
 if __name__ == "__main__":
-    dyn1 = leafbank("A1.dlg")
-    dyn2 = leafbank("B1.dlg")
-    dyn3 = leafbank("A2.dlg")
-    dyn4 = leafbank("B2.dlg")
+    a1 = leafbank("A1.dlg")
+    b1 = leafbank("B1.dlg")
+    a2 = leafbank("A2.dlg")
+    b2 = leafbank("B2.dlg")
 
-#    beam1 = beam("derp",1,[dyn1,dyn2])
-    plan1 = plan("derp",2,[dyn1,dyn2,dyn3,dyn4])
+    plan1 = plan("derp",2,[a1,b1,a2,b2])
