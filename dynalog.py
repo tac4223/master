@@ -32,6 +32,8 @@ einfach zu machen.
 """
 
 import numpy as np
+import dicom as dcm
+import copy
 
 class DynalogMismatchError(Exception):
     """
@@ -77,7 +79,7 @@ class LeafbankMismatchError(DynalogMismatchError):
 
 class BeamMismatchError(DynalogMismatchError):
 
-    def __init__(self,plan_uid,beam_number,leafbank,key,msg="must be identical"):
+    def __init__(self,plan_uid,beam_number,key,msg="must be identical"):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -105,15 +107,13 @@ class BeamMismatchError(DynalogMismatchError):
         """
         self.uid = plan_uid
         self.beam_number = beam_number
-        self.leafbank = leafbank
         self.key = key
         self.msg = msg
 
     def __str__(self):
         return "\nPlan {0}\nBeam {2}\n"\
-        "{1} mismatch between beam {2} and leafbank {3}: "\
-        "{1} {4}".format(self.uid,self.key,self.beam_number,
-        self.leafbank,self.msg)
+        "{1} mismatch between beam {2} DICOM header and DynaLog header: "\
+        "{1} {3}".format(self.uid,self.key,self.beam_number,self.msg)
 
 class PlanMismatchError(DynalogMismatchError):
 
@@ -322,7 +322,7 @@ class leafbank:
 
 class beam:
 
-    def __init__(self,plan_uid,beam_number,banks):
+    def __init__(self,banks,dicom_header=None,dicom_beam=None):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -355,8 +355,12 @@ class beam:
             Gibt an, ob die Metadaten des Beams und der Leafbänke bereits auf
             Konsistenz geprüft wurden.
 
-        header : dict
-            Enthält die Metadaten, die mit anderen Objekten abgeglichen werden.
+        dicom_header : dict
+            Enthält die Soll-Metadaten, die aus dem DICOM Planobjekt ausgelesen
+            werden.
+
+        dicom_dose : ndarray
+            Enthält die Dosis
 
         banks : list
             Liste von 2 leafbank-Objekten.
@@ -368,12 +372,50 @@ class beam:
         prüfen.
         """
         self.validated = False
-        self.header = {"beam_number":beam_number, "plan_uid":plan_uid}
         self.banks = banks
+        self.dicom_header = dicom_header
+        self.dicom_beam = dicom_beam
+
+        self.construct_dicomdata()
+        self.construct_logdata()
 
         self.validate_beam()
 
-    def check_beam(self):
+    def construct_dicomdata(self):
+        self.dicom_dose = 25000*np.array([self.dicom_beam.ControlPointSequence[num].
+        CumulativeMetersetWeight for num in range(self.dicom_beam.NumberOfControlPoints)])
+
+        self.dicom_gantry_angle = np.array([self.dicom_beam.ControlPointSequence[num].
+        GantryAngle for num in range(self.dicom_beam.NumberOfControlPoints)])
+
+
+    def construct_logdata(self):
+        if self.check_leafbank_data() == True:
+            self.log_dose = 1*self.banks[0].dose_fraction
+            self.log_gantry_angle = self.banks[0].gantry_angle/10.
+            self.log_header = copy.deepcopy(self.banks[0].header)
+            self.log_previous_segment = 1*self.banks[0].previous_segment
+            del self.log_header["version"]
+            del self.log_header["side"]
+            del self.log_header["filename"]
+
+    @classmethod
+    def convert_angles(self,data,target_coord="log"):
+        if target_coord == "log":
+            if type(data) in [np.ndarray,list,tuple]:
+                data = np.array(data)
+            return 360 - (data - 180) % 360
+        elif target_coord == "dicom":
+            if type(data) in [np.ndarray,list,tuple]:
+                data = np.array(data)
+                output = 360 - (data - 180) % 360
+                output[np.where(data == 180)] = 0
+                return output
+            else:
+                if data == 180: return 0
+                return 360 - (data - 180) % 360
+
+    def check_leafbank_data(self):
         """
         Beschreibung
         -----------------------------------------------------------------------
@@ -389,30 +431,46 @@ class beam:
             for key in self.banks[0].header.keys():
                 if key in ["filename","side"]:
                     if self.banks[0].header[key] == self.banks[1].header[key]:
-                        raise LeafbankMismatchError(self.header["plan_uid"],
-                            self.header["beam_number"],
+                        raise LeafbankMismatchError(self.dicom_header["plan_uid"],
+                            self.dicom_header["beam_number"],
                             key,"can't be identical for both banks")
                 else:
                     if self.banks[0].header[key] != self.banks[1].header[key]:
-                        raise LeafbankMismatchError(self.header["plan_uid"],
-                                               self.header["beam_number"],key)
+                        raise LeafbankMismatchError(self.dicom_header["plan_uid"],
+                        self.dicom_header["beam_number"],key)
 
-            for key in self.header.keys():
-                    if self.header[key] != self.banks[0].header[key]:
-                        raise BeamMismatchError(self.header["plan_uid"],
-                                           self.header["beam_number"],
-                                        self.banks[0].header["side"],key)
-                    if self.header[key] != self.banks[1].header[key]:
-                        raise BeamMismatchError(self.header["plan_uid"],
-                                           self.header["beam_number"],
-                                        self.banks[1].header["side"],key)
+                if not np.all(self.banks[0].dose_fraction ==
+                    self.banks[1].dose_fraction):
+                    raise LeafbankMismatchError(self.dicom_header["plan_uid"],
+                        self.dicom_header["beam_number"],"dose array")
+
+                if not np.all(self.banks[0].gantry_angle ==
+                    self.banks[1].gantry_angle):
+                    raise LeafbankMismatchError(self.dicom_header["plan_uid"],
+                        self.dicom_header["beam_number"],"gantry angle array")
+
+                if not np.all(self.banks[0].previous_segment ==
+                    self.banks[1].previous_segment):
+                    raise LeafbankMismatchError(self.dicom_header["plan_uid"],
+                        self.dicom_header["beam_number"],"previous segment array")
         except LeafbankMismatchError:
-            raise
-        except BeamMismatchError:
             raise
         else:
             return True
         return False
+
+    def check_beam_metadata(self):
+        try:
+            for key in self.dicom_header.keys():
+                if self.dicom_header[key] != self.log_header[key]:
+                    raise BeamMismatchError(self.dicom_header["plan_uid"],
+                    self.dicom_header["beam_number"],key)
+        except BeamMismatchError:
+            raise
+        except AttributeError:
+            return False
+        else:
+            return True
 
     def validate_beam(self):
         """
@@ -421,13 +479,16 @@ class beam:
         Ruft check_beam auf, und setzt, falls erfolgreich, 'validated' auf True.
         """
         try:
-            self.validated = self.check_beam()
+            self.check_leafbank_data()
+            self.check_beam_metadata()
         except BeamMismatchError:
             raise
+        else:
+            self.validated = True
 
 class plan:
 
-    def __init__(self,plan_uid,number_of_beams,bank_pool):
+    def __init__(self,dicom_file):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -475,11 +536,17 @@ class plan:
         Validierung.
         """
         self.validated = False
-        self.header = {"plan_uid":plan_uid,"number_of_beams":number_of_beams}
-        self.beams = [None for k in range(self.header["number_of_beams"])]
+        self.header = {}
+        self.dicom_data = dicom_file
+        self.construct_header()
 
-        self.construct_beams(bank_pool)
-        self.validate_plan()
+        self.beams = [None for k in range(len(self.dicom_data.BeamSequence))]
+
+    def construct_header(self):
+        self.header["plan_uid"] = self.dicom_data.SOPInstanceUID
+        self.header["patient_name"] = self.dicom_data.PatientName.split("^")
+        self.header["patient_id"] = self.dicom_data.PatientID
+        self.header["plan_name"] = self.dicom_data.RTPlanLabel
 
     def construct_beams(self,bank_pool):
         """
@@ -495,18 +562,28 @@ class plan:
         Fügt leafbank-Objekte zu Beams zusammen und sortiert sie an passender
         Stelle in der Beam-Liste ein.
         """
-        if len(bank_pool) < 2*self.header["number_of_beams"]:
+        if len(bank_pool) != 2*len(self.beams):
             raise PlanMismatchError(self.header["plan_uid"],"beam count",
                 "plan needs {0} leafbanks for beam construction,"\
-                " only {1} were passed."\
-                .format(2*self.header["number_of_beams"],len(bank_pool)))
+                " {1} were passed."\
+                .format(2*len(self.beams),len(bank_pool)))
+
         else:
             beam_nums = [bank.header["beam_number"] for bank in bank_pool]
             sort_index = np.argsort(beam_nums)
-            for num in range(self.header["number_of_beams"]):
-                self.beams[num] = beam(self.header["plan_uid"],
-                num+1,[bank_pool[sort_index[2*num]],
-                       bank_pool[sort_index[2*num+1]]])
+            for num in range(len(self.beams)):
+                beam_header = copy.deepcopy(self.header)
+                del beam_header["plan_name"]
+                beam_header["beam_number"] = num+1
+                beam_header["leaf_count"] = int(self.dicom_data.
+                    BeamSequence[num].BeamLimitingDeviceSequence[2].
+                    NumberOfLeafJawPairs)
+
+                self.beams[num] = beam([bank_pool[sort_index[2*num]],
+                       bank_pool[sort_index[2*num+1]]],beam_header,
+                        self.dicom_data.BeamSequence[num])
+
+        self.validate_plan()
 
     def check_plan(self):
         """
@@ -524,15 +601,15 @@ class plan:
             for num in range(len(self.beams)):
                 current_beam = self.beams[num]
                 current_beam.validate_beam()
-                if current_beam.header["beam_number"] != num+1:
+                if current_beam.log_header["beam_number"] != num+1:
                     raise PlanMismatchError(self.header["plan_uid"],
-                    "beam assignment","beam at position {0} of beam list"\
+                    "beam assignment","beam at index {0} of beam list"\
                     " identifies as beam {1} instead of beam {2}."\
-                    .format(num,current_beam.header["beam_number"],num+1))
-            if len(self.beams) != self.header["number_of_beams"]:
+                    .format(num,current_beam.log_header["beam_number"],num+1))
+            if len(self.beams) != len(self.beams):
                 raise PlanMismatchError(self.header["plan_uid"],"beam count",
                 "beam list contains {0} entries, plan header requires {1}."\
-                .format(len(self.beams),self.header["number_of_beams"]))
+                .format(len(self.beams),len(self.beams)))
         except PlanMismatchError:
             raise
         else:
@@ -561,7 +638,7 @@ class plan:
         for beam in self.beams:
             beam.validated = False
 
-    def change_header_data(self,key,new_value):
+    def change_all_header_data(self,key,new_value):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -577,7 +654,7 @@ class plan:
         Beschreibung
         -----------------------------------------------------------------------
         Ändert den Wert für angegebenes Header-Feld in Plan, Beam und Leafbank-
-        Objekten. Nur mäglich, wenn Plan nicht validiert ist, um Situationen
+        Objekten. Nur möglich, wenn Plan nicht validiert ist, um Situationen
         zu vermeiden, in denen man davon ausgeht dass nicht geänderte Werte
         vorliegen, aber tatsächlich einzelne Einträge geändert wurden.
         'validated' bleibt auch nach Ausführung auf False, es wird aber
@@ -600,12 +677,18 @@ class plan:
             elif key in self.header.keys():
                 self.header[key] = new_value
             for beam in self.beams:
-                if key not in beam.header.keys():
+                if key not in beam.log_header.keys():
                     raise PlanMismatchError(self.header["plan_uid"],
                     "header keyword","{0} is not a valid keyword for"\
                     " beam object header data.".format(key))
-                elif key in beam.header.keys():
-                    beam.header[key] = new_value
+                elif key in beam.log_header.keys():
+                    beam.log_header[key] = new_value
+                if key not in beam.dicom_header.keys():
+                    raise PlanMismatchError(self.header["plan_uid"],
+                    "header keyword","{0} is not a valid keyword for"\
+                    " beam object header data.".format(key))
+                elif key in beam.dicom_header.keys():
+                    beam.dicom_header[key] = new_value
                     for bank in beam.banks:
                         if key not in bank.header.keys():
                             raise PlanMismatchError(self.header["plan_uid"],
@@ -619,7 +702,7 @@ class plan:
 if __name__ == "__main__":
     a1 = leafbank("A1.dlg")
     b1 = leafbank("B1.dlg")
-    a2 = leafbank("A2.dlg")
-    b2 = leafbank("B2.dlg")
 
-    plan1 = plan("derp",2,[a1,b1,a2,b2])
+    p = plan(dcm.read_file("plan.dcm"))
+    p.construct_beams([a1,b1])
+
