@@ -34,6 +34,7 @@ einfach zu machen.
 import numpy as np
 import dicom as dcm
 import copy
+import matplotlib.pyplot as plt
 
 class DynalogMismatchError(Exception):
     """
@@ -326,14 +327,13 @@ class beam:
         """
         Parameter
         -----------------------------------------------------------------------
-        plan_uid : str
-            Die UID des Plans, den man am Ende rekonstruieren möchte. Muss
-            spezifiziert werden, um auszuschließen dass irrtümlich falsche Leafbänke
-            berücksichtigt werden.
+        dicom_header : dict
+            Dictionary, das die erwarteten Metadaten enthält. Wird von Plan-
+            Instanz in der Funktion create_beams erzeugt.
 
-        beam_number : int
-            Gibt an, welche Beamnummer der angelegte Beam bekommt. Muss natürlich
-            später deckungsgleich mit den aus DynaLogs ausgelesenen Werten sein.
+        dicom_beam : dicom.dataset.FileDataset
+            Element der BeamSequence-Liste aus DICOM-Objekt. Übergibt alle
+            anderen "Soll"-Werte für intuitive Aufbewahrung im jeweiligen Beam.
 
         banks : list
             Liste von 2 Leafbank-Objekten, die dann im Beam-Objekt gespeichert
@@ -341,13 +341,35 @@ class beam:
 
         Funktionen
         -----------------------------------------------------------------------
-        check_beam :
-            Prüft, ob alle Metadaten sowohl zwischen den beiden Leafbänken als
-            auch dem Beam selbst konsistent sind
+        construct_dicomdata :
+            Falls dicom_header übergeben wurde, wird dieser in Objekteigenschaft
+            übernommen und anschließend dicom_beam ausgewertet. Falls nicht,
+            wird die Funktion beendet.
+
+        construct_logdata :
+            Prüft zunächst mittels check_leafbank_data, ob die Leafbankdaten
+            stimmig sind. Falls ja, werden Dosis, Gantrywinkel, identische
+            Headerdaten und das previous segment Array in Eigenschaften des
+            Beams übertragen, um sie leichter zugänglich zu machen.
+
+        convert_angles :
+            Rechnet Winkel vom Plan- ins Dynalog-Format um (und umgekehrt).
+
+        mlc_export :
+            Fügt die Leafbank-Daten (leafbank.leafs_actual) von Seite A und B
+            so zusammen, dass sie Zeile für Zeile der Formatierung im DICOM-
+            File entsprechen. Nur möglich für validierte Beams.
+
+        check_leafbank_data :
+            Prüft, ob die Metadaten der Leafbänke sinnvoll übereinstimmen.
+
+        check_beam_metadata :
+            Prüft, ob die Metadaten der Dynalog- und DICOM-Header des Beams
+            zusammen passen.
 
         validate_beam :
-            Führt check_beam aus, bei positivem Ergebnis wird Instanzvariable
-            'verified' auf True gesetzt.
+            Führt check_leafbank_data und check_beam_metadata aus, bei
+            positivem Ergebnis wird Instanzvariable 'verified' auf True gesetzt.
 
         Instanzvariablen
         -----------------------------------------------------------------------
@@ -359,8 +381,34 @@ class beam:
             Enthält die Soll-Metadaten, die aus dem DICOM Planobjekt ausgelesen
             werden.
 
+        dicom_beam : dicom.dataset.FileDataset
+            Element der BeamSequence-Liste aus DICOM-Objekt.
+
         dicom_dose : ndarray
-            Enthält die Dosis
+            Enthält die Dosis aus dem DICOM-Beam als numpy-Array. Dosis wird in
+            Integers zwischen 0 und 25000 übersetzt, um identisch zu DynaLog-
+            Konvention zu werden.
+
+        dicom_gantry_angle : ndarray
+            Gantrywinkel in Grad als Array.
+
+        dicom_mlc : ndarray
+            Die MLC-Positionen aus DICOM-File. Format:
+             (Anzahl Kontrollpunkte,Anzahl Leafpaare), wobei Seite B zuerst
+             kommt.
+
+        log_dose : ndarray
+            DynaLog-Daten zur Dosis.
+
+        log_gantry_angle : ndarray
+            DynaLog-Daten zum Gantrywinkel.
+
+        log_header : dict
+            Header-Daten aus DynaLog Files, die zwischen beiden Bänken identisch
+            sind.
+
+        log_previous_segment : ndarray
+            Die Segmentangaben aus den DynaLog-Files.
 
         banks : list
             Liste von 2 leafbank-Objekten.
@@ -372,7 +420,11 @@ class beam:
         prüfen.
         """
         self.validated = False
-        self.banks = banks
+
+        if banks[0].header["side"] == "A": self.banks = banks
+        elif banks[0].header["side"] == "B": self.banks = banks[::-1]
+        #Stellt sicher dass stets Seite A an erster Stelle der Leafbänke steht.
+
         self.dicom_header = dicom_header
         self.dicom_beam = dicom_beam
 
@@ -382,14 +434,43 @@ class beam:
         self.validate_beam()
 
     def construct_dicomdata(self):
+        """
+        Beschreibung
+        -----------------------------------------------------------------------
+        Nimmt das DICOM-Objekt in self.dicom_beam auseinander. Dosis der
+        einzelnen Kontrollpunkte wird in Array gepackt, mit 25000 multipliziert
+        um mit DynaLog konform zu gehen.
+
+        Gantrywinkel wird direkt übernommen. Wichtig: Unterschiede im Koordinaten-
+        system bzgl. Winkel beachten.
+
+        MLC-Positionen werden ohne weitere Änderungen aus den Kontrollpunkten
+        rausgezogen.
+        """
+        if self.dicom_header == None:
+            return None
         self.dicom_dose = 25000*np.array([self.dicom_beam.ControlPointSequence[num].
         CumulativeMetersetWeight for num in range(self.dicom_beam.NumberOfControlPoints)])
 
         self.dicom_gantry_angle = np.array([self.dicom_beam.ControlPointSequence[num].
         GantryAngle for num in range(self.dicom_beam.NumberOfControlPoints)])
 
+        self.dicom_mlc = [self.dicom_beam.ControlPointSequence[num].
+            BeamLimitingDevicePositionSequence[0].
+            LeafJawPositions for num in range(1,178)]
+        self.dicom_mlc = np.insert(self.dicom_mlc,0,self.dicom_beam.
+            ControlPointSequence[0].BeamLimitingDevicePositionSequence[2].
+            LeafJawPositions)
+
 
     def construct_logdata(self):
+        """
+        Beschreibung
+        -----------------------------------------------------------------------
+        Schreibt Dosis, Gantrywinkel, Header und Segmentnummern aus den
+        Leafbänken in Beamvariablen, da sie so logischer/bequemer anzusprechen
+        sind.
+        """
         if self.check_leafbank_data() == True:
             self.log_dose = 1*self.banks[0].dose_fraction
             self.log_gantry_angle = self.banks[0].gantry_angle/10.
@@ -401,6 +482,27 @@ class beam:
 
     @classmethod
     def convert_angles(self,data,target_coord="log"):
+        """
+        Parameter
+        -----------------------------------------------------------------------
+        data : int or array-like
+            Die Winkel (einer oder mehrere) in 0-360 Grad, die von Dynalog in
+            Dicom-System umgerechnet werden sollen.
+
+        target_coord : str, "log" or "dicom"
+            Das Zielkoordinatensystem.
+
+        Beschreibung
+        -----------------------------------------------------------------------
+        DICOM- und DynaLog-Dateien unterscheiden sich im Ort des Nullpunkts für
+        den Gantrywinkel (12 bzw. 6 Uhr). Diese Funktion rechnet zwischen beiden
+        um.
+
+        Ausgabe
+        -----------------------------------------------------------------------
+        output : ndarray
+            Die passenden Werte im anderen Koordinatensystem.
+        """
         if target_coord == "log":
             if type(data) in [np.ndarray,list,tuple]:
                 data = np.array(data)
@@ -414,6 +516,28 @@ class beam:
             else:
                 if data == 180: return 0
                 return 360 - (data - 180) % 360
+        else:
+            raise DynalogMismatchError
+
+    def mlc_export(self):
+        """
+        Beschreibung
+        -----------------------------------------------------------------------
+        Fügt die Leafpositionen von Bank A und B passend aneinander, um sie
+        in DICOM-Format zu bringen.
+
+        Ausgabe
+        -----------------------------------------------------------------------
+        output : ndarray
+            Dimension (x,120), wobei x die Anzahl an aufgezeichneten Datenpunkten
+            des DynaLogs ist.
+        -----------------------------------------------------------------------
+        """
+        if self.validated == False: raise BeamMismatchError(
+            self.dicom_header["plan_uid"],self.dicom_header["beam_number"],
+            "validation","cannot export MLC positions of unvalidated beam.")
+        return np.append(-1*self.banks[1].leafs_actual,
+                             self.banks[0].leafs_actual,axis=1)/51.
 
     def check_leafbank_data(self):
         """
@@ -460,6 +584,19 @@ class beam:
         return False
 
     def check_beam_metadata(self):
+        """
+        Beschreibung
+        -----------------------------------------------------------------------
+        Prüft, ob die Metadaten des Beams in DICOM- und DynaLog-Header zueinander
+        passen.
+
+        Ausgabe
+        -----------------------------------------------------------------------
+        output : boolean
+            True wenn alles stimmt, Exception wenn nicht.
+        """
+        if self.dicom_header == None:
+            return None
         try:
             for key in self.dicom_header.keys():
                 if self.dicom_header[key] != self.log_header[key]:
@@ -467,8 +604,6 @@ class beam:
                     self.dicom_header["beam_number"],key)
         except BeamMismatchError:
             raise
-        except AttributeError:
-            return False
         else:
             return True
 
@@ -543,6 +678,12 @@ class plan:
         self.beams = [None for k in range(len(self.dicom_data.BeamSequence))]
 
     def construct_header(self):
+        """
+        Beschreibung
+        -----------------------------------------------------------------------
+        Nimmt DICOM-Datei auseinander und sammelt die Attribute Plan UID,
+        Patientenname, Patienten ID und Plan Name in einem Dictionary.
+        """
         self.header["plan_uid"] = self.dicom_data.SOPInstanceUID
         self.header["patient_name"] = self.dicom_data.PatientName.split("^")
         self.header["patient_id"] = self.dicom_data.PatientID
@@ -703,6 +844,6 @@ if __name__ == "__main__":
     a1 = leafbank("A1.dlg")
     b1 = leafbank("B1.dlg")
 
+    b = beam([a1,b1])
     p = plan(dcm.read_file("plan.dcm"))
     p.construct_beams([a1,b1])
-
