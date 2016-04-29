@@ -34,7 +34,6 @@ einfach zu machen.
 import numpy as np
 import dicom as dcm
 import copy
-import matplotlib.pyplot as plt
 
 class DynalogMismatchError(Exception):
     """
@@ -355,7 +354,7 @@ class beam:
         convert_angles :
             Rechnet Winkel vom Plan- ins Dynalog-Format um (und umgekehrt).
 
-        mlc_export :
+        convert_mlc :
             Fügt die Leafbank-Daten (leafbank.leafs_actual) von Seite A und B
             so zusammen, dass sie Zeile für Zeile der Formatierung im DICOM-
             File entsprechen. Nur möglich für validierte Beams.
@@ -461,6 +460,7 @@ class beam:
         self.dicom_mlc = np.insert(self.dicom_mlc,0,self.dicom_beam.
             ControlPointSequence[0].BeamLimitingDevicePositionSequence[2].
             LeafJawPositions)
+        self.direction = self.dicom_beam.ControlPointSequence[0].GantryRotationDirection
 
 
     def construct_logdata(self):
@@ -519,7 +519,7 @@ class beam:
         else:
             raise DynalogMismatchError
 
-    def mlc_export(self):
+    def convert_mlc(self):
         """
         Beschreibung
         -----------------------------------------------------------------------
@@ -536,8 +536,69 @@ class beam:
         if self.validated == False: raise BeamMismatchError(
             self.dicom_header["plan_uid"],self.dicom_header["beam_number"],
             "validation","cannot export MLC positions of unvalidated beam.")
-        return np.append(-1*self.banks[1].leafs_actual,
-                             self.banks[0].leafs_actual,axis=1)/51.
+        return np.round(np.append(-1*self.banks[1].leafs_actual,
+                             self.banks[0].leafs_actual,axis=1)/51.,2)
+
+    def pick_controlpoints(self,criterion="segment",limit="last"):
+        index = []
+        if criterion == "dose":
+            for dose in self.dicom_dose:
+                if limit=="first": index.append(np.where(self.log_dose >= dose)[0][0])
+                if limit=="last": index.append(np.where(self.log_dose <= dose)[0][-1])
+
+        elif criterion == "angle":
+            for angle in self.convert_angles(self.dicom_gantry_angle):
+                if limit=="first" and self.direction == "CW":
+                    try:
+                        index.append(np.where(self.log_gantry_angle <= angle)[0][0])
+                    except IndexError:
+                        index.append(0)
+                if limit=="first" and self.direction=="CCWW":
+                    index.append(np.where(self.log_gantry_angle >= angle)[0][0])
+                if limit=="last" and self.direction == "CW":
+                    index.append(np.where(self.log_gantry_angle >= angle)[0][-1])
+                if limit=="last" and self.direction=="CCWW":
+                    index.append(np.where(self.log_gantry_angle <= angle)[0][-1])
+
+        elif criterion == "segment":
+            for segment in range(self.dicom_beam.NumberOfControlPoints):
+                if limit=="first" and self.direction == "CW":
+                    index.append(np.where(self.log_previous_segment <= segment)[0][0])
+                if limit=="first" and self.direction=="CCWW":
+                    index.append(np.where(self.log_previous_segment >= segment)[0][0])
+                if limit=="last" and self.direction == "CW":
+                    index.append(np.where(self.log_previous_segment >= segment)[0][-1])
+                if limit=="last" and self.direction=="CCWW":
+                    index.append(np.where(self.log_previous_segment <= segment)[0][-1])
+
+        return np.sort(index).astype(int)
+
+    def export_logbeam(self):
+        index = self.pick_controlpoints()
+        exportbeam = copy.deepcopy(self.dicom_beam)
+
+        mlc = self.convert_mlc()[index]
+        gantry_angle = self.convert_angles(self.log_gantry_angle[index],"dicom")
+        dose = 1./25000*self.log_dose[index]
+
+
+        exportbeam.ControlPointSequence[0].\
+            BeamLimitingDevicePositionSequence[2].LeafJawPositions = list(mlc[0,:])
+
+        for num in range(1,178):
+            exportbeam.ControlPointSequence[num].\
+                BeamLimitingDevicePositionSequence[0].LeafJawPositions = list(mlc[num,:])
+
+            exportbeam.ControlPointSequence[num].\
+                CumulativeMetersetWeight = dose[num]
+            exportbeam.ControlPointSequence[num].ReferencedDoseReferenceSequence[0].\
+                CumulativeDoseReferenceCoefficient = dose[num]
+
+            exportbeam.ControlPointSequence[num].\
+                GantryAngle = gantry_angle[num]
+
+        return exportbeam
+
 
     def check_leafbank_data(self):
         """
@@ -840,10 +901,21 @@ class plan:
                 beam.validate_beam()
             self.check_plan()
 
+    def export_dynalog_plan(self,plan_name,UID,filename):
+        exportplan = copy.deepcopy(self.dicom_data)
+        for num in range(len(self.beams)):
+            exportplan.BeamSequence[num] = self.beams[num].export_logbeam()
+        exportplan.SOPInstanceUID = UID
+        exportplan.RTPlanLabel = plan_name
+        exportplan.StudyInstanceUID = "Dynalog"
+        exportplan.SeriesInstanceUID = "Dynalog"
+        exportplan.StudyID = "Dynalog"
+        dcm.write_file(filename,exportplan)
+
 if __name__ == "__main__":
     a1 = leafbank("A1.dlg")
     b1 = leafbank("B1.dlg")
-
-    b = beam([a1,b1])
     p = plan(dcm.read_file("plan.dcm"))
     p.construct_beams([a1,b1])
+    b = p.beams[0]
+
