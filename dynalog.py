@@ -146,7 +146,7 @@ class PlanMismatchError(DynalogMismatchError):
 
 class leafbank:
 
-    def __init__(self,filename):
+    def __init__(self,filename,side=None):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -225,7 +225,11 @@ class leafbank:
         """
         self.header = {}
         self.header["filename"] = filename
-        self.header["side"] = filename[0]
+
+        if side == None:
+            self.header["side"] = filename[0]
+        else:
+            self.header["side"] = side
 
         self.read_data()
 
@@ -553,22 +557,22 @@ class beam:
                         index.append(np.where(self.log_gantry_angle <= angle)[0][0])
                     except IndexError:
                         index.append(0)
-                if limit=="first" and self.direction=="CCWW":
+                if limit=="first" and self.direction=="CC":
                     index.append(np.where(self.log_gantry_angle >= angle)[0][0])
                 if limit=="last" and self.direction == "CW":
                     index.append(np.where(self.log_gantry_angle >= angle)[0][-1])
-                if limit=="last" and self.direction=="CCWW":
+                if limit=="last" and self.direction=="CC":
                     index.append(np.where(self.log_gantry_angle <= angle)[0][-1])
 
         elif criterion == "segment":
             for segment in range(self.dicom_beam.NumberOfControlPoints):
                 if limit=="first" and self.direction == "CW":
                     index.append(np.where(self.log_previous_segment <= segment)[0][0])
-                if limit=="first" and self.direction=="CCWW":
+                if limit=="first" and self.direction=="CC":
                     index.append(np.where(self.log_previous_segment >= segment)[0][0])
                 if limit=="last" and self.direction == "CW":
                     index.append(np.where(self.log_previous_segment >= segment)[0][-1])
-                if limit=="last" and self.direction=="CCWW":
+                if limit=="last" and self.direction=="CC":
                     index.append(np.where(self.log_previous_segment <= segment)[0][-1])
 
         return np.sort(index).astype(int)
@@ -902,6 +906,9 @@ class plan:
             self.check_plan()
 
     def export_dynalog_plan(self,plan_name,UID,filename):
+        if self.validated == False:
+            raise PlanMismatchError(self.header["plan_uid"],"validation",
+            "can't export unvalidated plan.")
         exportplan = copy.deepcopy(self.dicom_data)
         for num in range(len(self.beams)):
             exportplan.BeamSequence[num] = self.beams[num].export_logbeam()
@@ -913,9 +920,10 @@ class plan:
         dcm.write_file(filename,exportplan)
 
 if __name__ == "__main__":
-    a1 = leafbank("A1.dlg")
-    b1 = leafbank("B1.dlg")
-    p = plan(dcm.read_file("plan.dcm"))
-    p.construct_beams([a1,b1])
-    b = p.beams[0]
+    from get_dicom_data import filetools as ft
+#    a1 = leafbank("A1.dlg")
+#    b1 = leafbank("B1.dlg")
+    p = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
+    p.construct_beams(ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[p.header["plan_uid"]])
+#    b = p.beams[0]
 
