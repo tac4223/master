@@ -9,6 +9,7 @@ from PyQt4 import uic, QtGui
 from get_dicom_data import filetools as ft
 import os
 import dynalog
+import threading
 
 Ui_Mainwindow, QMainwindow = uic.loadUiType("master.ui")
 
@@ -28,7 +29,7 @@ class Main(QMainwindow,Ui_Mainwindow):
 
         self.button_plans_refresh.clicked.connect(self.populate_table)
 
-        self.button_export.clicked.connect(self.export)
+        self.button_export.clicked.connect(self.export_thread)
 
         self.plans = []
         self.banks = {}
@@ -86,27 +87,42 @@ class Main(QMainwindow,Ui_Mainwindow):
         self.table_plans.resizeColumnsToContents()
         self.table_plans.setSortingEnabled(True)
 
-    def export(self):
-        delchars = "".join(c for c in map(chr, range(256)) if not c.isalnum())
+    def export_thread(self):
         self.progressbar_export.setMinimum(1)
-        self.progressbar_export.setMaximum(len(self.banks.keys())-1)
         self.progressbar_export.setValue(1)
+        self.busybar.setMaximum(0)
+        self.progressbar_export.setMaximum(len(self.banks.keys())-1)
 
+        barlock = threading.Lock()
         for plan in self.plans:
-            filename = "_".join([plan.header["patient_name"][0],plan.header["patient_name"][1],plan.header["plan_name"]])
-            filename = filename.replace(" ","_")
-            filename = filename.translate(None,delchars) + ".dcm"
             try:
-                plan.construct_beams(self.banks[plan.header["plan_uid"]])
-                os.chdir(str(self.edit_outputdir.text()))
-                plan.export_dynalog_plan(plan.header["plan_name"]+str(self.edit_exportplan_suffix.text()),\
-                plan.header["plan_uid"]+str(self.edit_exportuid_suffix.text()),\
-                filename)
-                self.progressbar_export.setValue(self.progressbar_export.value()+1)
-            except (KeyError,IndexError,dynalog.PlanMismatchError):
-                continue
+                if 2*len(plan.beams) == len(self.banks[plan.header["plan_uid"]]):
+                    export_thread = threading.Thread(target=self.export,args=(plan,barlock))
+                    export_thread.start()
+            except KeyError:
+                pass
+            except:
+                raise
 
-#        self.progressbar_export.setValue(1)
+    def export(self,plan,lock):
+        delchars = "".join(c for c in map(chr, range(256)) if not c.isalnum())
+
+        filename = "_".join([plan.header["patient_name"][0],plan.header["patient_name"][1],plan.header["plan_name"]])
+        filename = filename.replace(" ","_")
+        filename = filename.translate(None,delchars) + ".dcm"
+        try:
+            plan.construct_beams(self.banks[plan.header["plan_uid"]])
+            plan.validate_plan()
+            os.chdir(str(self.edit_outputdir.text()))
+            plan.export_dynalog_plan(plan.header["plan_name"],\
+            plan.header["plan_uid"],\
+            filename)
+            lock.acquire()
+            self.progressbar_export.setValue(self.progressbar_export.value()+1)
+            lock.release()
+
+        except (KeyError,IndexError,dynalog.PlanMismatchError):
+            raise
 
 if __name__ == "__main__":
     import sys

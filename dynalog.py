@@ -34,6 +34,7 @@ einfach zu machen.
 import numpy as np
 import dicom as dcm
 import copy
+import time
 
 class DynalogMismatchError(Exception):
     """
@@ -239,7 +240,8 @@ class leafbank:
         -----------------------------------------------------------------------
         Öffnet die Dynalog-Datei, teilt den Header zur weiteren Verarbeitung ab,
         wandelt den Datenteil in ein Numpy-Array mit float-Zahlen und ruft
-        Funktionen zur weiteren Verarbeitung auf.
+        Funktionen zur weiteren Verarbeitung auf. Nimmt eine Headerlänge von
+        6 Zeilen an.
         """
         with open(self.header["filename"],"r") as data:
             raw = [line.strip().split(",") for line in data.readlines()]
@@ -330,13 +332,16 @@ class beam:
         """
         Parameter
         -----------------------------------------------------------------------
-        dicom_header : dict
+        dicom_header : dict, default None
             Dictionary, das die erwarteten Metadaten enthält. Wird von Plan-
-            Instanz in der Funktion create_beams erzeugt.
+            Instanz in der Funktion create_beams erzeugt. Falls kein Wert
+            übergeben wird, überspringt die Init-Funktion den DICOM-Teil.
 
-        dicom_beam : dicom.dataset.FileDataset
+        dicom_beam : dicom.dataset.FileDataset, default None
             Element der BeamSequence-Liste aus DICOM-Objekt. Übergibt alle
             anderen "Soll"-Werte für intuitive Aufbewahrung im jeweiligen Beam.
+            Falls kein Wert übergeben wird, überspringt die Init-Funktion den
+            DICOM-Teil.
 
         banks : list
             Liste von 2 Leafbank-Objekten, die dann im Beam-Objekt gespeichert
@@ -362,6 +367,19 @@ class beam:
             Fügt die Leafbank-Daten (leafbank.leafs_actual) von Seite A und B
             so zusammen, dass sie Zeile für Zeile der Formatierung im DICOM-
             File entsprechen. Nur möglich für validierte Beams.
+
+        pick_controlpoints :
+            Wählt unter verschiedenen Kriterien aus der Vielzahl aufgezeichneter
+            Daten Kontrollpunkte aus, die sinnvoll mit dem DICOM-Plan verglichen
+            werden können.
+
+        correct_leafgap :
+            Sorgt dafür, dass in MLC-Positionen immer ein Spalt von mindestens
+            0,02 cm bleibt (Anforderung des Planungssystems).
+
+        export_logbeam :
+            Erstellt ein DICOM-Beamobjekt das die Daten aus den DynaLog-Files
+            enthält.
 
         check_leafbank_data :
             Prüft, ob die Metadaten der Leafbänke sinnvoll übereinstimmen.
@@ -424,17 +442,16 @@ class beam:
         """
         self.validated = False
 
-        if banks[0].header["side"] == "A": self.banks = banks
-        elif banks[0].header["side"] == "B": self.banks = banks[::-1]
-        #Stellt sicher dass stets Seite A an erster Stelle der Leafbänke steht.
-
         self.dicom_header = dicom_header
         self.dicom_beam = dicom_beam
-
         self.construct_dicomdata()
-        self.construct_logdata()
 
-        self.validate_beam()
+        if banks != None:
+            self.banks = list(np.array(banks)[np.argsort([banks[0].\
+                header["side"],banks[0].header["side"]])])
+            #Stellt sicher dass stets Seite A an erster Stelle der Leafbänke steht.
+            self.construct_logdata()
+            self.validate_beam()
 
     def construct_dicomdata(self):
         """
@@ -460,7 +477,7 @@ class beam:
 
         self.dicom_mlc = [self.dicom_beam.ControlPointSequence[num].
             BeamLimitingDevicePositionSequence[0].
-            LeafJawPositions for num in range(1,178)]
+            LeafJawPositions for num in range(1,len(self.dicom_beam.ControlPointSequence))]
         self.dicom_mlc = np.insert(self.dicom_mlc,0,self.dicom_beam.
             ControlPointSequence[0].BeamLimitingDevicePositionSequence[2].
             LeafJawPositions)
@@ -544,6 +561,34 @@ class beam:
                              self.banks[0].leafs_actual,axis=1)/51.,2)
 
     def pick_controlpoints(self,criterion="segment",limit="last"):
+        """
+        Parameter
+        -----------------------------------------------------------------------
+        criterion : str
+            Möglich sind "dose", "angle" oder "segment". Wählt aus, nach welchem
+            Kriterium die Kontrollpunkte zusammengestellt werden.
+
+        limit : str, "first" or "last"
+            Ob zu Beginn oder Ende eines Intervalls von criterion Werte ausgewählt
+            werden.
+
+        Beschreibung
+        -----------------------------------------------------------------------
+        Da DynaLogs deutlich mehr Einträge enthalten als im DICOM-Plan
+        Kontrollpunkte vorhanden sind, muss eine Auswahl getroffen werden. Hierzu
+        lassen sich die drei Kriterien Dosis, Gantrywinkel und Segmentnummer
+        verwenden, die alle mit Planparametern abgeglichen und dementsprechend
+        zur Kontrollpunktauswahl verwendet werden können.
+
+        Die Stadardwerte (segment und last) lieferten in kurzen Tests die
+        besten Ergebnisse.
+
+        Ausgabe
+        -----------------------------------------------------------------------
+        output : ndarray
+            Array mit Indizes, das ohne weitere Verarbeitung für log_dose,
+            log_gantry_angle und Leafbank-Positionen verwendet werden kann.
+        """
         index = []
         if criterion == "dose":
             for dose in self.dicom_dose:
@@ -577,11 +622,48 @@ class beam:
 
         return np.sort(index).astype(int)
 
+    def correct_leafgap(self,data):
+        """
+        Parameter
+        -----------------------------------------------------------------------
+        data : ndarray
+            Array mit den MLC-Position, im DICOM-Format.
+
+        Beschreibung
+        -----------------------------------------------------------------------
+        Da Eclipse (und wahrscheinlich alle anderen Planungssysteme) keine
+        sich berührenden Leafpaare akzeptieren, sorgt diese Funktion dafür dass
+        alle Paare mindestens 0,02 cm Abstand zwischen beiden Leafs haben.
+
+        Ausgabe
+        -----------------------------------------------------------------------
+        output : ndarray
+            Identisch mit data, sofern keine Abstandsunterschreitungen
+            festgestellt wurden. Falls doch, sind entsprechende Paare um je 0,01
+            geöffnet.
+        """
+        d1,d2 = data[:,:self.dicom_header["leaf_count"]],data[:,self.dicom_header["leaf_count"]:][:,::-1]
+        d1 = np.where(np.abs(d1-d2)<0.01,d1+0.01,d1)
+        d2 = np.where(np.abs(d1-d2)<0.01,d2+0.01,d2)
+        return np.append(d1,d2[:,::-1],axis=1)
+
     def export_logbeam(self):
+        """
+        Beschreibung
+        -----------------------------------------------------------------------
+        Ersetzt MLC, Gantrywinkel und Dosis einer Kopie des DICOM Beamobjekts
+        mit den Werten aus DynaLogs.
+
+        Ausgabe
+        -----------------------------------------------------------------------
+        output : dicom.dataset.Dataset
+            DICOM Beam-Objekt das direkt in Plan-Objekte als Teil von BeamSequence
+            integriert werden kann.
+        """
         index = self.pick_controlpoints()
         exportbeam = copy.deepcopy(self.dicom_beam)
 
-        mlc = self.convert_mlc()[index]
+        mlc = self.correct_leafgap(self.convert_mlc()[index])
         gantry_angle = self.convert_angles(self.log_gantry_angle[index],"dicom")
         dose = 1./25000*self.log_dose[index]
 
@@ -589,7 +671,7 @@ class beam:
         exportbeam.ControlPointSequence[0].\
             BeamLimitingDevicePositionSequence[2].LeafJawPositions = list(mlc[0,:])
 
-        for num in range(1,178):
+        for num in range(1,len(self.dicom_beam.ControlPointSequence)):
             exportbeam.ControlPointSequence[num].\
                 BeamLimitingDevicePositionSequence[0].LeafJawPositions = list(mlc[num,:])
 
@@ -740,7 +822,8 @@ class plan:
         self.dicom_data = dicom_file
         self.construct_header()
 
-        self.beams = [None for k in range(len(self.dicom_data.BeamSequence))]
+        self.beams = [None for beamlet in self.dicom_data.BeamSequence if
+            beamlet.BeamType == "DYNAMIC"]
 
     def construct_header(self):
         """
@@ -754,7 +837,7 @@ class plan:
         self.header["patient_id"] = self.dicom_data.PatientID
         self.header["plan_name"] = self.dicom_data.RTPlanLabel
 
-    def construct_beams(self,bank_pool):
+    def construct_beams(self,bank_pool=None):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -768,13 +851,25 @@ class plan:
         Fügt leafbank-Objekte zu Beams zusammen und sortiert sie an passender
         Stelle in der Beam-Liste ein.
         """
-        if len(bank_pool) != 2*len(self.beams):
+        if bank_pool == None:
+            for num in range(len(self.beams)):
+                beam_header = copy.deepcopy(self.header)
+                del beam_header["plan_name"]
+                beam_header["beam_number"] = num+1
+                beam_header["leaf_count"] = int(self.dicom_data.\
+                    BeamSequence[num].BeamLimitingDeviceSequence[2].\
+                    NumberOfLeafJawPairs)
+
+                self.beams[num] = beam(None,beam_header,self.dicom_data.BeamSequence[num])
+
+
+        elif len(bank_pool) != 2*len(self.beams):
             raise PlanMismatchError(self.header["plan_uid"],"beam count",
                 "plan needs {0} leafbanks for beam construction,"\
                 " {1} were passed."\
                 .format(2*len(self.beams),len(bank_pool)))
 
-        else:
+        elif len(bank_pool) == 2*len(self.beams):
             beam_nums = [bank.header["beam_number"] for bank in bank_pool]
             sort_index = np.argsort(beam_nums)
             for num in range(len(self.beams)):
@@ -789,7 +884,7 @@ class plan:
                        bank_pool[sort_index[2*num+1]]],beam_header,
                         self.dicom_data.BeamSequence[num])
 
-        self.validate_plan()
+#        self.validate_plan()
 
     def check_plan(self):
         """
@@ -906,6 +1001,36 @@ class plan:
             self.check_plan()
 
     def export_dynalog_plan(self,plan_name,UID,filename):
+        """
+        Parameter
+        -----------------------------------------------------------------------
+        plan_name : str
+            Wert des RTPlanLabel-Tags im exportierten Plan. Maximal 13
+            Zeichen, längere Namen werden abgeschnitten.
+
+        UID : str
+            Wert des SOPInstanceUID-Tags im exportierten Plan. Muss der UID-Syntax
+            entsprechen.
+
+        filename : str
+            Der Dateiname, unter dem das exportierte RTPLAN Objekt abgelegt
+            werden soll.
+
+        Beschreibung
+        -----------------------------------------------------------------------
+        Exportiert den derzeitigen Planzustand als DICOM-Objekt. Basis ist eine
+        Kopie des DICOM-Files mit dem der Plan initialisiert wurde. StudyInstance,
+        SeriesInstance und Study UIDs werden ersetzt/geändert. Alle im DynaLog
+        enthaltenen Werte werden anstelle der Originalparameter exportiert.
+
+        Plan muss validiert sein bevor der Export erfolgen kann!
+
+        Ausgabe
+        -----------------------------------------------------------------------
+        output : DICOM RTPLAN Objekt
+            Planobjekt mit DynaLog-Werten.
+
+        """
         if self.validated == False:
             raise PlanMismatchError(self.header["plan_uid"],"validation",
             "can't export unvalidated plan.")
@@ -913,17 +1038,29 @@ class plan:
         for num in range(len(self.beams)):
             exportplan.BeamSequence[num] = self.beams[num].export_logbeam()
         exportplan.SOPInstanceUID = UID
-        exportplan.RTPlanLabel = plan_name
-        exportplan.StudyInstanceUID = "Dynalog"
-        exportplan.SeriesInstanceUID = "Dynalog"
-        exportplan.StudyID = "Dynalog"
+        exportplan.RTPlanLabel = plan_name[:13]
+
+        ltime = time.localtime()
+        study_instance = exportplan.StudyInstanceUID.split(".")
+        series_instance = exportplan.SeriesInstanceUID.split(".")
+
+        exportplan.StudyInstanceUID = ".".join(study_instance[:-1])+\
+            "."+"".join([str(t) for t in ltime[3:6]])
+        exportplan.SeriesInstanceUID = ".".join(series_instance[:-1])+\
+            "."+"".join([str(t) for t in ltime[:6]])
+        exportplan.StudyID = "Id"+\
+            "".join([str(t) for t in ltime[3:6]])
+        exportplan.ApprovalStatus = "UNAPPROVED"
         dcm.write_file(filename,exportplan)
 
 if __name__ == "__main__":
     from get_dicom_data import filetools as ft
-#    a1 = leafbank("A1.dlg")
-#    b1 = leafbank("B1.dlg")
-    p = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
-    p.construct_beams(ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[p.header["plan_uid"]])
+    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")
+    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")[0]
+    p1.construct_beams(banks[p1.header["plan_uid"]])
+    p1.validate_plan()
+
+    exp_beam = p1.beams[0].convert_mlc()[p1.beams[0].pick_controlpoints()]
+    corr_beam = p1.beams[0].correct_leafgap(exp_beam)
 #    b = p.beams[0]
 

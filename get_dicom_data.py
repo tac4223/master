@@ -21,9 +21,7 @@ class filetools:
                     filename = "\\".join([root,f])
                     dicom_files.append(dcm.read_file(filename))
         plans = [dl.plan(plan) for plan in dicom_files if plan.Modality == "RTPLAN"]
-#        return list(np.array(plans)[np.argsort(
-#            [p.header["patient_name"][0] for p in plans])])
-        return plans
+        return [plan for plan in plans if len(plan.beams) > 0]
 
     @classmethod
     def get_banks(self,top):

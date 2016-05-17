@@ -48,6 +48,9 @@
      <property name="text">
       <string>DICOM Dateien:</string>
      </property>
+     <property name="alignment">
+      <set>Qt::AlignBottom|Qt::AlignLeading|Qt::AlignLeft</set>
+     </property>
     </widget>
     <widget class="QLabel" name="label_dynadir">
      <property name="geometry">
@@ -61,6 +64,9 @@
      <property name="text">
       <string>DynaLog Dateien:</string>
      </property>
+     <property name="alignment">
+      <set>Qt::AlignBottom|Qt::AlignLeading|Qt::AlignLeft</set>
+     </property>
     </widget>
     <widget class="QLabel" name="label_outputdir">
      <property name="geometry">
@@ -73,6 +79,9 @@
      </property>
      <property name="text">
       <string>Ausgabe:</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignBottom|Qt::AlignLeading|Qt::AlignLeft</set>
      </property>
     </widget>
     <widget class="QLineEdit" name="edit_dynadir">
@@ -214,14 +223,30 @@
       <string>Aktualisieren</string>
      </property>
     </widget>
+    <widget class="QLabel" name="label_onlyarcslisted">
+     <property name="geometry">
+      <rect>
+       <x>30</x>
+       <y>190</y>
+       <width>291</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Es werden nur Pläne mit mindestens einem Arc aufgeführt!</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignBottom|Qt::AlignLeading|Qt::AlignLeft</set>
+     </property>
+    </widget>
    </widget>
    <widget class="QGroupBox" name="box_export">
     <property name="geometry">
      <rect>
       <x>10</x>
       <y>360</y>
-      <width>431</width>
-      <height>141</height>
+      <width>401</width>
+      <height>81</height>
      </rect>
     </property>
     <property name="title">
@@ -230,8 +255,8 @@
     <widget class="QPushButton" name="button_export">
      <property name="geometry">
       <rect>
-       <x>20</x>
-       <y>80</y>
+       <x>10</x>
+       <y>20</y>
        <width>111</width>
        <height>51</height>
       </rect>
@@ -241,72 +266,36 @@
 erstellen</string>
      </property>
     </widget>
-    <widget class="QLineEdit" name="edit_exportplan_suffix">
-     <property name="geometry">
-      <rect>
-       <x>120</x>
-       <y>20</y>
-       <width>113</width>
-       <height>20</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>dyn</string>
-     </property>
-     <property name="placeholderText">
-      <string/>
-     </property>
-    </widget>
-    <widget class="QLabel" name="label_exportplan_suffix">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>20</y>
-       <width>91</width>
-       <height>16</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Plannamen-Suffix:</string>
-     </property>
-    </widget>
-    <widget class="QLabel" name="label_exportuid_suffix">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>50</y>
-       <width>91</width>
-       <height>16</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>UID-Suffix:</string>
-     </property>
-    </widget>
-    <widget class="QLineEdit" name="edit_exportuid_suffix">
-     <property name="geometry">
-      <rect>
-       <x>120</x>
-       <y>50</y>
-       <width>113</width>
-       <height>20</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>dyn</string>
-     </property>
-    </widget>
     <widget class="QProgressBar" name="progressbar_export">
      <property name="geometry">
       <rect>
-       <x>150</x>
-       <y>80</y>
+       <x>130</x>
+       <y>50</y>
        <width>261</width>
-       <height>51</height>
+       <height>21</height>
       </rect>
      </property>
      <property name="value">
       <number>0</number>
+     </property>
+     <property name="textVisible">
+      <bool>false</bool>
+     </property>
+    </widget>
+    <widget class="QProgressBar" name="busybar">
+     <property name="geometry">
+      <rect>
+       <x>130</x>
+       <y>20</y>
+       <width>261</width>
+       <height>23</height>
+      </rect>
+     </property>
+     <property name="value">
+      <number>0</number>
+     </property>
+     <property name="textVisible">
+      <bool>false</bool>
      </property>
     </widget>
    </widget>
