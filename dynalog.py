@@ -524,21 +524,7 @@ class beam:
         output : ndarray
             Die passenden Werte im anderen Koordinatensystem.
         """
-        if target_coord == "log":
-            if type(data) in [np.ndarray,list,tuple]:
-                data = np.array(data)
-            return 360 - (data - 180) % 360
-        elif target_coord == "dicom":
-            if type(data) in [np.ndarray,list,tuple]:
-                data = np.array(data)
-                output = 360 - (data - 180) % 360
-                output[np.where(data == 180)] = 0
-                return output
-            else:
-                if data == 180: return 0
-                return 360 - (data - 180) % 360
-        else:
-            raise DynalogMismatchError
+        return (540 - np.array(data))%360
 
     def convert_mlc(self):
         """
@@ -560,17 +546,14 @@ class beam:
         return np.round(np.append(-1*self.banks[1].leafs_actual,
                              self.banks[0].leafs_actual,axis=1)/51.,2)
 
-    def pick_controlpoints(self,criterion="segment",limit="last"):
+    def pick_controlpoints(self,criterion="angle"):
         """
         Parameter
         -----------------------------------------------------------------------
         criterion : str
-            Möglich sind "dose", "angle" oder "segment". Wählt aus, nach welchem
+            Möglich sind "dose" oder "angle". Wählt aus, nach welchem
             Kriterium die Kontrollpunkte zusammengestellt werden.
 
-        limit : str, "first" or "last"
-            Ob zu Beginn oder Ende eines Intervalls von criterion Werte ausgewählt
-            werden.
 
         Beschreibung
         -----------------------------------------------------------------------
@@ -590,39 +573,27 @@ class beam:
             log_gantry_angle und Leafbank-Positionen verwendet werden kann.
         """
         index = []
+
         if criterion == "dose":
-            for dose in self.dicom_dose:
-                if limit=="first": index.append(np.where(self.log_dose >= dose)[0][0])
-                if limit=="last": index.append(np.where(self.log_dose <= dose)[0][-1])
+            for dose in self.dicom_dose[:-1]:
+                index.append(np.nonzero(self.log_dose >= dose)[0][0])
+            index.append(-1)
+            return index
 
         elif criterion == "angle":
-            for angle in self.convert_angles(self.dicom_gantry_angle):
-                if limit=="first" and self.direction == "CW":
-                    try:
-                        index.append(np.where(self.log_gantry_angle <= angle)[0][0])
-                    except IndexError:
-                        index.append(0)
-                if limit=="first" and self.direction=="CC":
-                    index.append(np.where(self.log_gantry_angle >= angle)[0][0])
-                if limit=="last" and self.direction == "CW":
-                    index.append(np.where(self.log_gantry_angle >= angle)[0][-1])
-                if limit=="last" and self.direction=="CC":
-                    index.append(np.where(self.log_gantry_angle <= angle)[0][-1])
+            if self.direction == "CW":
+                for angle in self.convert_angles(self.dicom_gantry_angle)[:-1]:
+                    index.append(np.nonzero(self.log_gantry_angle <= angle)[0][0])
+                index.append(-1)
+                return index
 
-        elif criterion == "segment":
-            for segment in range(self.dicom_beam.NumberOfControlPoints):
-                if limit=="first" and self.direction == "CW":
-                    index.append(np.where(self.log_previous_segment <= segment)[0][0])
-                if limit=="first" and self.direction=="CC":
-                    index.append(np.where(self.log_previous_segment >= segment)[0][0])
-                if limit=="last" and self.direction == "CW":
-                    index.append(np.where(self.log_previous_segment >= segment)[0][-1])
-                if limit=="last" and self.direction=="CC":
-                    index.append(np.where(self.log_previous_segment <= segment)[0][-1])
+            if self.direction=="CC":
+                for angle in self.convert_angles(self.dicom_gantry_angle)[:-1]:
+                    index.append(np.nonzero(self.log_gantry_angle >= angle)[0][0])
+                index.append(-1)
+                return index
 
-        return np.sort(index).astype(int)
-
-    def correct_leafgap(self,data):
+    def correct_leafgap(self,data,gap=0.2):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -643,8 +614,8 @@ class beam:
             geöffnet.
         """
         d1,d2 = data[:,:self.dicom_header["leaf_count"]],data[:,self.dicom_header["leaf_count"]:][:,::-1]
-        d1 = np.where(np.abs(d1-d2)<0.01,d1+0.01,d1)
-        d2 = np.where(np.abs(d1-d2)<0.01,d2+0.01,d2)
+        d1 = np.where(np.abs(d1-d2)<0.01,d1+gap/2.,d1)
+        d2 = np.where(np.abs(d1-d2)<0.01,d2-gap/2.,d2)
         return np.append(d1,d2[:,::-1],axis=1)
 
     def export_logbeam(self):
@@ -664,9 +635,7 @@ class beam:
         exportbeam = copy.deepcopy(self.dicom_beam)
 
         mlc = self.correct_leafgap(self.convert_mlc()[index])
-        gantry_angle = self.convert_angles(self.log_gantry_angle[index],"dicom")
         dose = 1./25000*self.log_dose[index]
-
 
         exportbeam.ControlPointSequence[0].\
             BeamLimitingDevicePositionSequence[2].LeafJawPositions = list(mlc[0,:])
@@ -679,9 +648,6 @@ class beam:
                 CumulativeMetersetWeight = dose[num]
             exportbeam.ControlPointSequence[num].ReferencedDoseReferenceSequence[0].\
                 CumulativeDoseReferenceCoefficient = dose[num]
-
-            exportbeam.ControlPointSequence[num].\
-                GantryAngle = gantry_angle[num]
 
         return exportbeam
 
@@ -821,9 +787,18 @@ class plan:
         self.header = {}
         self.dicom_data = dicom_file
         self.construct_header()
+        self.arcs = 0
+        self.construct_dicombeams()
 
-        self.beams = [None for beamlet in self.dicom_data.BeamSequence if
-            beamlet.BeamType == "DYNAMIC"]
+
+    def construct_dicombeams(self):
+        self.beams = []
+        for beam in self.dicom_data.BeamSequence:
+            if beam.BeamType == "DYNAMIC":
+                self.beams.append("dynamic")
+                self.arcs += 1
+            else:
+                self.beams.append(beam)
 
     def construct_header(self):
         """
@@ -837,7 +812,7 @@ class plan:
         self.header["patient_id"] = self.dicom_data.PatientID
         self.header["plan_name"] = self.dicom_data.RTPlanLabel
 
-    def construct_beams(self,bank_pool=None):
+    def construct_logbeams(self,bank_pool=None):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -900,13 +875,12 @@ class plan:
         """
         try:
             for num in range(len(self.beams)):
-                current_beam = self.beams[num]
-                current_beam.validate_beam()
-                if current_beam.log_header["beam_number"] != num+1:
+                self.beams[num].validate_beam()
+                if self.beams[num].log_header["beam_number"] != num+1:
                     raise PlanMismatchError(self.header["plan_uid"],
                     "beam assignment","beam at index {0} of beam list"\
                     " identifies as beam {1} instead of beam {2}."\
-                    .format(num,current_beam.log_header["beam_number"],num+1))
+                    .format(num,self.beams[num].log_header["beam_number"],num+1))
             if len(self.beams) != len(self.beams):
                 raise PlanMismatchError(self.header["plan_uid"],"beam count",
                 "beam list contains {0} entries, plan header requires {1}."\
@@ -1000,7 +974,7 @@ class plan:
                 beam.validate_beam()
             self.check_plan()
 
-    def export_dynalog_plan(self,plan_name,UID,filename):
+    def export_dynalog_plan(self,plan_name,filename):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -1037,12 +1011,12 @@ class plan:
         exportplan = copy.deepcopy(self.dicom_data)
         for num in range(len(self.beams)):
             exportplan.BeamSequence[num] = self.beams[num].export_logbeam()
-        exportplan.SOPInstanceUID = UID
         exportplan.RTPlanLabel = plan_name[:13]
 
         ltime = time.localtime()
         study_instance = exportplan.StudyInstanceUID.split(".")
         series_instance = exportplan.SeriesInstanceUID.split(".")
+        instance_id = exportplan.SOPInstanceUID.split(".")
 
         exportplan.StudyInstanceUID = ".".join(study_instance[:-1])+\
             "."+"".join([str(t) for t in ltime[3:6]])
@@ -1050,17 +1024,57 @@ class plan:
             "."+"".join([str(t) for t in ltime[:6]])
         exportplan.StudyID = "Id"+\
             "".join([str(t) for t in ltime[3:6]])
+        exportplan.SOPInstanceUID = ".".join(instance_id[:-1])+\
+            "."+"".join([str(t) for t in ltime[:6]])
         exportplan.ApprovalStatus = "UNAPPROVED"
         dcm.write_file(filename,exportplan)
 
+    def strip_privates(self,plan):
+        del plan[0x3287,0x1000]
+        del plan[3287,0x0010]
+        return plan
+
 if __name__ == "__main__":
     from get_dicom_data import filetools as ft
-    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")
-    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")[0]
-    p1.construct_beams(banks[p1.header["plan_uid"]])
+    import matplotlib.pyplot as plt
+    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")
+    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
+    p1.construct_logbeams(banks[p1.header["plan_uid"]])
     p1.validate_plan()
 
-    exp_beam = p1.beams[0].convert_mlc()[p1.beams[0].pick_controlpoints()]
-    corr_beam = p1.beams[0].correct_leafgap(exp_beam)
-#    b = p.beams[0]
+    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")
+    p2 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")[0]
+    p2.construct_logbeams(banks[p2.header["plan_uid"]])
+    p2.validate_plan()
+
+    index = p1.beams[0].pick_controlpoints(),p1.beams[1].pick_controlpoints()
+
+    beams = p1.beams[0],p1.beams[1]
+
+    plt.close("all")
+    for num in range(2):
+        plt.figure(num)
+        plt.plot(beams[num].convert_angles(beams[num].log_gantry_angle[index[num]],"dicom"),label="DynaLog")
+        plt.plot(beams[num].dicom_gantry_angle,label="DICOM")
+        plt.xlabel("Control Points")
+        plt.ylabel("Gantry Angle / Degrees")
+        plt.title("Gantry Angle")
+        plt.legend()
+        plt.show()
+
+        plt.figure(num+2)
+        plt.plot(beams[num].log_dose[index[num]]/25000,label="DynaLog")
+        plt.plot(beams[num].dicom_dose/25000,label="DICOM")
+        plt.xlabel("Control Points")
+        plt.ylabel("Relative Dose")
+        plt.title("Dose")
+        plt.legend()
+        plt.show()
+
+        plt.figure(num+4)
+        plt.plot((beams[num].log_dose[index[num]]/beams[num].dicom_dose - 1)*100,label="Deviation from DICOM")
+        plt.xlabel("Control Points")
+        plt.ylabel("Relative Error / %")
+        plt.title("Deviation")
+        plt.show()
 

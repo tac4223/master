@@ -5,21 +5,25 @@ Created on Mon May 02 10:23:12 2016
 @author: mick
 """
 
-from PyQt4 import uic, QtGui
+from PyQt4 import uic, QtGui, QtCore
 from get_dicom_data import filetools as ft
 import os
 import dynalog
 import threading
+import multiprocessing as mp
 
 Ui_Mainwindow, QMainwindow = uic.loadUiType("master.ui")
 
-
 class Main(QMainwindow,Ui_Mainwindow):
+
+    progress = QtCore.pyqtSignal()
 
     def __init__(self,):
         super(Main,self).__init__()
         self.setupUi(self)
         self.table_plans.resizeColumnsToContents()
+
+        self.progress.connect(self.update_bar)
 
         self.button_dicomdir.clicked.connect(self.pick_dicomdir)
         self.edit_dicomdir.editingFinished.connect(self.changed_dicomdir)
@@ -78,7 +82,7 @@ class Main(QMainwindow,Ui_Mainwindow):
             self.table_plans.setItem(num,2,QtGui.QTableWidgetItem("N/A"))
             try:
                 complete = len(self.banks[self.plans[num].header["plan_uid"]])\
-                    == 2*len(self.plans[num].beams)
+                    == 2*self.plans[num].arcs
             except KeyError:
                 complete = False
             answer = {True:"Ja",False:"Nein"}
@@ -87,39 +91,39 @@ class Main(QMainwindow,Ui_Mainwindow):
         self.table_plans.resizeColumnsToContents()
         self.table_plans.setSortingEnabled(True)
 
+    def update_bar(self):
+        self.progressbar_export.setValue(self.progressbar_export.value()+1)
+        if self.progressbar_export.value() == self.progressbar_export.maximum():
+            self.busybar.setMaximum(1)
+
     def export_thread(self):
         self.progressbar_export.setMinimum(1)
         self.progressbar_export.setValue(1)
         self.busybar.setMaximum(0)
         self.progressbar_export.setMaximum(len(self.banks.keys())-1)
 
-        barlock = threading.Lock()
         for plan in self.plans:
             try:
-                if 2*len(plan.beams) == len(self.banks[plan.header["plan_uid"]]):
-                    export_thread = threading.Thread(target=self.export,args=(plan,barlock))
-                    export_thread.start()
+                if 2*plan.arcs == len(self.banks[plan.header["plan_uid"]]):
+                    t = threading.Thread(target=self.export,args=(plan,))
+                    t.start()
             except KeyError:
                 pass
             except:
                 raise
 
-    def export(self,plan,lock):
+    def export(self,plan):
         delchars = "".join(c for c in map(chr, range(256)) if not c.isalnum())
 
         filename = "_".join([plan.header["patient_name"][0],plan.header["patient_name"][1],plan.header["plan_name"]])
         filename = filename.replace(" ","_")
         filename = filename.translate(None,delchars) + ".dcm"
         try:
-            plan.construct_beams(self.banks[plan.header["plan_uid"]])
+            plan.construct_logbeams(self.banks[plan.header["plan_uid"]])
             plan.validate_plan()
             os.chdir(str(self.edit_outputdir.text()))
-            plan.export_dynalog_plan(plan.header["plan_name"],\
-            plan.header["plan_uid"],\
-            filename)
-            lock.acquire()
-            self.progressbar_export.setValue(self.progressbar_export.value()+1)
-            lock.release()
+            plan.export_dynalog_plan(plan.header["plan_name"],filename)
+            self.progress.emit()
 
         except (KeyError,IndexError,dynalog.PlanMismatchError):
             raise

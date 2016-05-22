@@ -49,3 +49,9 @@ Temporary Items
 dynalog notizen.txt
 *.dcm
 *.pyc
+packing.py
+build/bdist.win-amd64/winexe/temp/bz2.py
+*.spec
+packing.bat
+looptest.py
+dynastats.py

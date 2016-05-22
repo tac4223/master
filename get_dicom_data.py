@@ -21,7 +21,7 @@ class filetools:
                     filename = "\\".join([root,f])
                     dicom_files.append(dcm.read_file(filename))
         plans = [dl.plan(plan) for plan in dicom_files if plan.Modality == "RTPLAN"]
-        return [plan for plan in plans if len(plan.beams) > 0]
+        return [plan for plan in plans if (plan.arcs > 0) == True]
 
     @classmethod
     def get_banks(self,top):
