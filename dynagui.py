@@ -10,7 +10,6 @@ from get_dicom_data import filetools as ft
 import os
 import dynalog
 import threading
-import multiprocessing as mp
 
 Ui_Mainwindow, QMainwindow = uic.loadUiType("master.ui")
 

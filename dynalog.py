@@ -287,12 +287,12 @@ class leafbank:
         Kollimator-Rotation und Jaw-Positionen.
         """
         self.gantry_angle = raw_data[:,6]
-        self.previous_segment = raw_data[:,1]
-        self.collimator_rotation = raw_data[:,7]
-        self.y1 = raw_data[:,8]
-        self.y2 = raw_data[:,9]
-        self.x1 = raw_data[:,10]
-        self.x2 = raw_data[:,11]
+#        self.previous_segment = raw_data[:,1]
+#        self.collimator_rotation = raw_data[:,7]
+#        self.y1 = raw_data[:,8]
+#        self.y2 = raw_data[:,9]
+#        self.x1 = raw_data[:,10]
+#        self.x2 = raw_data[:,11]
 
     def build_beam(self,raw_data):
         """
@@ -306,8 +306,8 @@ class leafbank:
         Extrahiert Beamdaten wie kumulative Dosisfraktion und Einschaltstatus.
         """
         self.dose_fraction = raw_data[:,0]
-        self.beam_holdoff = raw_data[:,2]
-        self.beam_on = raw_data[:,3]
+#        self.beam_holdoff = raw_data[:,2]
+#        self.beam_on = raw_data[:,3]
 
     def build_mlc(self,raw_data):
         """
@@ -321,8 +321,8 @@ class leafbank:
         Extrahiert die eigentlich spannenden Daten zu Carriage- und Leafposition,
         Soll- und Ist-Zustand.
         """
-        self.carriage_expected = raw_data[:,12]
-        self.carriage_actual = raw_data[:,13]
+#        self.carriage_expected = raw_data[:,12]
+#        self.carriage_actual = raw_data[:,13]
         self.leafs_expected = raw_data[:,14::4]
         self.leafs_actual = raw_data[:,15::4]
 
@@ -499,7 +499,7 @@ class beam:
             self.log_dose = 1*self.banks[0].dose_fraction
             self.log_gantry_angle = self.banks[0].gantry_angle/10.
             self.log_header = copy.deepcopy(self.banks[0].header)
-            self.log_previous_segment = 1*self.banks[0].previous_segment
+#            self.log_previous_segment = 1*self.banks[0].previous_segment
             del self.log_header["version"]
             del self.log_header["side"]
             del self.log_header["filename"]
@@ -670,10 +670,10 @@ class beam:
                     raise LeafbankMismatchError(self.dicom_header["plan_uid"],
                         self.dicom_header["beam_number"],"gantry angle array")
 
-                if not np.all(self.banks[0].previous_segment ==
-                    self.banks[1].previous_segment):
-                    raise LeafbankMismatchError(self.dicom_header["plan_uid"],
-                        self.dicom_header["beam_number"],"previous segment array")
+#                if not np.all(self.banks[0].previous_segment ==
+#                    self.banks[1].previous_segment):
+#                    raise LeafbankMismatchError(self.dicom_header["plan_uid"],
+#                        self.dicom_header["beam_number"],"previous segment array")
         except LeafbankMismatchError:
             raise
         else:
@@ -897,66 +897,66 @@ class plan:
         for beam in self.beams:
             beam.validated = False
 
-    def change_all_header_data(self,key,new_value):
-        """
-        Parameter
-        -----------------------------------------------------------------------
-        key : str
-            key für die 'header' Dictionaries, dessen Wert geändert werden soll.
-            Muss bereits angelegt sein, Neueinträge sind mit der Funktion nicht
-            möglich!
-
-        new_value : str or int
-            Der Wert, auf den header[key] gesetzt wird. Variablentyp ändert sich
-            natürlich je nach editiertem Wert.
-
-        Beschreibung
-        -----------------------------------------------------------------------
-        Ändert den Wert für angegebenes Header-Feld in Plan, Beam und Leafbank-
-        Objekten. Nur möglich, wenn Plan nicht validiert ist, um Situationen
-        zu vermeiden, in denen man davon ausgeht dass nicht geänderte Werte
-        vorliegen, aber tatsächlich einzelne Einträge geändert wurden.
-        'validated' bleibt auch nach Ausführung auf False, es wird aber
-        check_plan ausgeführt, um zu prüfen ob die Änderungen konsistent erfolgten.
-        """
-        if self.validated == True:
-            raise PlanMismatchError(self.header["plan_uid"],"validation",
-            "can't modify validated plan, call invalidate_plan() first.")
-        try:
-            self.check_plan()
-        except PlanMismatchError:
-            raise PlanMismatchError(self.header["plan_uid"],"validation",
-            "error while checking plan object before UID change."\
-            " call check_plan() for error message.")
-        else:
-            if key not in self.header.keys():
-                raise PlanMismatchError(self.header["plan_uid"],
-                "header keyword","{0} is not a valid keyword for"\
-                " plan object header data.".format(key))
-            elif key in self.header.keys():
-                self.header[key] = new_value
-            for beam in self.beams:
-                if key not in beam.log_header.keys():
-                    raise PlanMismatchError(self.header["plan_uid"],
-                    "header keyword","{0} is not a valid keyword for"\
-                    " beam object header data.".format(key))
-                elif key in beam.log_header.keys():
-                    beam.log_header[key] = new_value
-                if key not in beam.dicom_header.keys():
-                    raise PlanMismatchError(self.header["plan_uid"],
-                    "header keyword","{0} is not a valid keyword for"\
-                    " beam object header data.".format(key))
-                elif key in beam.dicom_header.keys():
-                    beam.dicom_header[key] = new_value
-                    for bank in beam.banks:
-                        if key not in bank.header.keys():
-                            raise PlanMismatchError(self.header["plan_uid"],
-                            "header keyword","{0} is not a valid keyword for"\
-                            " leafbank object header data.".format(key))
-                        elif key in bank.header.keys():
-                            bank.header[key] = new_value
-                beam.validate_beam()
-            self.check_plan()
+#    def change_all_header_data(self,key,new_value):
+#        """
+#        Parameter
+#        -----------------------------------------------------------------------
+#        key : str
+#            key für die 'header' Dictionaries, dessen Wert geändert werden soll.
+#            Muss bereits angelegt sein, Neueinträge sind mit der Funktion nicht
+#            möglich!
+#
+#        new_value : str or int
+#            Der Wert, auf den header[key] gesetzt wird. Variablentyp ändert sich
+#            natürlich je nach editiertem Wert.
+#
+#        Beschreibung
+#        -----------------------------------------------------------------------
+#        Ändert den Wert für angegebenes Header-Feld in Plan, Beam und Leafbank-
+#        Objekten. Nur möglich, wenn Plan nicht validiert ist, um Situationen
+#        zu vermeiden, in denen man davon ausgeht dass nicht geänderte Werte
+#        vorliegen, aber tatsächlich einzelne Einträge geändert wurden.
+#        'validated' bleibt auch nach Ausführung auf False, es wird aber
+#        check_plan ausgeführt, um zu prüfen ob die Änderungen konsistent erfolgten.
+#        """
+#        if self.validated == True:
+#            raise PlanMismatchError(self.header["plan_uid"],"validation",
+#            "can't modify validated plan, call invalidate_plan() first.")
+#        try:
+#            self.check_plan()
+#        except PlanMismatchError:
+#            raise PlanMismatchError(self.header["plan_uid"],"validation",
+#            "error while checking plan object before UID change."\
+#            " call check_plan() for error message.")
+#        else:
+#            if key not in self.header.keys():
+#                raise PlanMismatchError(self.header["plan_uid"],
+#                "header keyword","{0} is not a valid keyword for"\
+#                " plan object header data.".format(key))
+#            elif key in self.header.keys():
+#                self.header[key] = new_value
+#            for beam in self.beams:
+#                if key not in beam.log_header.keys():
+#                    raise PlanMismatchError(self.header["plan_uid"],
+#                    "header keyword","{0} is not a valid keyword for"\
+#                    " beam object header data.".format(key))
+#                elif key in beam.log_header.keys():
+#                    beam.log_header[key] = new_value
+#                if key not in beam.dicom_header.keys():
+#                    raise PlanMismatchError(self.header["plan_uid"],
+#                    "header keyword","{0} is not a valid keyword for"\
+#                    " beam object header data.".format(key))
+#                elif key in beam.dicom_header.keys():
+#                    beam.dicom_header[key] = new_value
+#                    for bank in beam.banks:
+#                        if key not in bank.header.keys():
+#                            raise PlanMismatchError(self.header["plan_uid"],
+#                            "header keyword","{0} is not a valid keyword for"\
+#                            " leafbank object header data.".format(key))
+#                        elif key in bank.header.keys():
+#                            bank.header[key] = new_value
+#                beam.validate_beam()
+#            self.check_plan()
 
     def export_dynalog_plan(self,plan_name,filename):
         """
