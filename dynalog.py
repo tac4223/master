@@ -475,12 +475,15 @@ class beam:
         self.dicom_gantry_angle = np.array([self.dicom_beam.ControlPointSequence[num].
         GantryAngle for num in range(self.dicom_beam.NumberOfControlPoints)])
 
-        self.dicom_mlc = [self.dicom_beam.ControlPointSequence[num].
-            BeamLimitingDevicePositionSequence[0].
-            LeafJawPositions for num in range(1,len(self.dicom_beam.ControlPointSequence))]
-        self.dicom_mlc = np.insert(self.dicom_mlc,0,self.dicom_beam.
-            ControlPointSequence[0].BeamLimitingDevicePositionSequence[2].
-            LeafJawPositions)
+#        self.dicom_mlc = [[self.dicom_beam.ControlPointSequence[num].
+#            BeamLimitingDevicePositionSequence[0].
+#            LeafJawPositions] for num in range(1,self.dicom_beam.NumberOfControlPoints)]
+#        self.dicom_mlc = np.insert(self.dicom_mlc,0,self.dicom_beam.
+#            ControlPointSequence[0].BeamLimitingDevicePositionSequence[2].
+#            LeafJawPositions)
+
+#       Mal eingebaut, aber am Ende nicht verwendet.
+
         self.direction = self.dicom_beam.ControlPointSequence[0].GantryRotationDirection
 
 
@@ -543,8 +546,14 @@ class beam:
         if self.validated == False: raise BeamMismatchError(
             self.dicom_header["plan_uid"],self.dicom_header["beam_number"],
             "validation","cannot export MLC positions of unvalidated beam.")
-        return np.round(np.append(-1*self.banks[1].leafs_actual,
-                             self.banks[0].leafs_actual,axis=1)/51.,2)
+
+        elif self.validated == True:
+            s2 = np.round(self.banks[0].leafs_actual/51.,2)
+            s1 = np.round(-1*self.banks[1].leafs_actual/51.,2)
+
+            x1 = np.where(s2-s1 < 0,s1+(s2-s1)/2.-0.01,s1)
+            x2 = np.where(s2-s1 < 0,s2-(s2-s1)/2.+0.01,s2)
+        return np.append(x2,x1,axis=1)
 
     def pick_controlpoints(self,criterion="angle"):
         """
@@ -593,31 +602,6 @@ class beam:
                 index.append(-1)
                 return index
 
-    def correct_leafgap(self,data,gap=0.2):
-        """
-        Parameter
-        -----------------------------------------------------------------------
-        data : ndarray
-            Array mit den MLC-Position, im DICOM-Format.
-
-        Beschreibung
-        -----------------------------------------------------------------------
-        Da Eclipse (und wahrscheinlich alle anderen Planungssysteme) keine
-        sich berührenden Leafpaare akzeptieren, sorgt diese Funktion dafür dass
-        alle Paare mindestens 0,02 cm Abstand zwischen beiden Leafs haben.
-
-        Ausgabe
-        -----------------------------------------------------------------------
-        output : ndarray
-            Identisch mit data, sofern keine Abstandsunterschreitungen
-            festgestellt wurden. Falls doch, sind entsprechende Paare um je 0,01
-            geöffnet.
-        """
-        d1,d2 = data[:,:self.dicom_header["leaf_count"]],data[:,self.dicom_header["leaf_count"]:][:,::-1]
-        d1 = np.where(np.abs(d1-d2)<0.01,d1+gap/2.,d1)
-        d2 = np.where(np.abs(d1-d2)<0.01,d2-gap/2.,d2)
-        return np.append(d1,d2[:,::-1],axis=1)
-
     def export_logbeam(self):
         """
         Beschreibung
@@ -634,7 +618,7 @@ class beam:
         index = self.pick_controlpoints()
         exportbeam = copy.deepcopy(self.dicom_beam)
 
-        mlc = self.correct_leafgap(self.convert_mlc()[index])
+        mlc = self.convert_mlc()
         dose = 1./25000*self.log_dose[index]
 
         exportbeam.ControlPointSequence[0].\
@@ -1046,35 +1030,39 @@ if __name__ == "__main__":
     p2 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")[0]
     p2.construct_logbeams(banks[p2.header["plan_uid"]])
     p2.validate_plan()
+    b2_dcm = p2.beams[0].dicom_mlc.reshape((178,120))
+    b2_log = p2.beams[0].convert_mlc()
+    s2 = b2_log[0][:60]
+    s1 = b2_log[0][60:]
 
     index = p1.beams[0].pick_controlpoints(),p1.beams[1].pick_controlpoints()
 
     beams = p1.beams[0],p1.beams[1]
 
-    plt.close("all")
-    for num in range(2):
-        plt.figure(num)
-        plt.plot(beams[num].convert_angles(beams[num].log_gantry_angle[index[num]],"dicom"),label="DynaLog")
-        plt.plot(beams[num].dicom_gantry_angle,label="DICOM")
-        plt.xlabel("Control Points")
-        plt.ylabel("Gantry Angle / Degrees")
-        plt.title("Gantry Angle")
-        plt.legend()
-        plt.show()
-
-        plt.figure(num+2)
-        plt.plot(beams[num].log_dose[index[num]]/25000,label="DynaLog")
-        plt.plot(beams[num].dicom_dose/25000,label="DICOM")
-        plt.xlabel("Control Points")
-        plt.ylabel("Relative Dose")
-        plt.title("Dose")
-        plt.legend()
-        plt.show()
-
-        plt.figure(num+4)
-        plt.plot((beams[num].log_dose[index[num]]/beams[num].dicom_dose - 1)*100,label="Deviation from DICOM")
-        plt.xlabel("Control Points")
-        plt.ylabel("Relative Error / %")
-        plt.title("Deviation")
-        plt.show()
+#    plt.close("all")
+#    for num in range(2):
+#        plt.figure(num)
+#        plt.plot(beams[num].convert_angles(beams[num].log_gantry_angle[index[num]],"dicom"),label="DynaLog")
+#        plt.plot(beams[num].dicom_gantry_angle,label="DICOM")
+#        plt.xlabel("Control Points")
+#        plt.ylabel("Gantry Angle / Degrees")
+#        plt.title("Gantry Angle")
+#        plt.legend()
+#        plt.show()
+#
+#        plt.figure(num+2)
+#        plt.plot(beams[num].log_dose[index[num]]/25000,label="DynaLog")
+#        plt.plot(beams[num].dicom_dose/25000,label="DICOM")
+#        plt.xlabel("Control Points")
+#        plt.ylabel("Relative Dose")
+#        plt.title("Dose")
+#        plt.legend()
+#        plt.show()
+#
+#        plt.figure(num+4)
+#        plt.plot((beams[num].log_dose[index[num]]-beams[num].dicom_dose)/12500.,label="Deviation from DICOM")
+#        plt.xlabel("Control Points")
+#        plt.ylabel("Absolute Error / Gy")
+#        plt.title("Deviation")
+#        plt.show()
 
