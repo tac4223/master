@@ -995,7 +995,7 @@ class plan:
         exportplan = copy.deepcopy(self.dicom_data)
         for num in range(len(self.beams)):
             exportplan.BeamSequence[num] = self.beams[num].export_logbeam()
-        exportplan.RTPlanLabel = plan_name[:13]
+        exportplan.RTPlanLabel = "dyn_"+plan_name[:13]
 
         ltime = time.localtime()
         study_instance = exportplan.StudyInstanceUID.split(".")
@@ -1030,7 +1030,7 @@ if __name__ == "__main__":
     p2 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")[0]
     p2.construct_logbeams(banks[p2.header["plan_uid"]])
     p2.validate_plan()
-    b2_dcm = p2.beams[0].dicom_mlc.reshape((178,120))
+#    b2_dcm = p2.beams[0].dicom_mlc.reshape((178,120))
     b2_log = p2.beams[0].convert_mlc()
     s2 = b2_log[0][:60]
     s1 = b2_log[0][60:]
