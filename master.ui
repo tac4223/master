@@ -36,7 +36,7 @@
         <x>10</x>
         <y>10</y>
         <width>781</width>
-        <height>221</height>
+        <height>451</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -54,7 +54,7 @@
          <x>10</x>
          <y>20</y>
          <width>761</width>
-         <height>161</height>
+         <height>391</height>
         </rect>
        </property>
        <property name="columnCount">
@@ -100,7 +100,7 @@
        <property name="geometry">
         <rect>
          <x>330</x>
-         <y>190</y>
+         <y>420</y>
          <width>111</width>
          <height>23</height>
         </rect>
@@ -113,7 +113,7 @@
        <property name="geometry">
         <rect>
          <x>30</x>
-         <y>190</y>
+         <y>420</y>
          <width>291</width>
          <height>16</height>
         </rect>
@@ -130,7 +130,7 @@
       <property name="geometry">
        <rect>
         <x>10</x>
-        <y>240</y>
+        <y>470</y>
         <width>401</width>
         <height>81</height>
        </rect>
@@ -196,6 +196,27 @@ erstellen</string>
      <attribute name="title">
       <string>Statistik</string>
      </attribute>
+    </widget>
+    <widget class="QWidget" name="tab_options">
+     <attribute name="title">
+      <string>Optionen</string>
+     </attribute>
+     <widget class="QCheckBox" name="checkbox_exportexpected">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>10</y>
+        <width>191</width>
+        <height>17</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Export der Soll- statt Ist-Position des MLCs.</string>
+      </property>
+      <property name="text">
+       <string>DynaLog: Soll-Position exportieren</string>
+      </property>
+     </widget>
     </widget>
    </widget>
    <widget class="QGroupBox" name="box_dirs">

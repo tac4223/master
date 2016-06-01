@@ -529,7 +529,7 @@ class beam:
         """
         return (540 - np.array(data))%360
 
-    def convert_mlc(self):
+    def convert_mlc(self,export_expected=False):
         """
         Beschreibung
         -----------------------------------------------------------------------
@@ -548,12 +548,23 @@ class beam:
             "validation","cannot export MLC positions of unvalidated beam.")
 
         elif self.validated == True:
-            s2 = np.round(self.banks[0].leafs_actual/51.,2)
-            s1 = np.round(-1*self.banks[1].leafs_actual/51.,2)
 
-            x1 = np.where(s2-s1 < 0,s1+(s2-s1)/2.-0.01,s1)
-            x2 = np.where(s2-s1 < 0,s2-(s2-s1)/2.+0.01,s2)
-        return np.append(x2,x1,axis=1)
+            if export_expected == False:
+                s2 = np.round(self.banks[0].leafs_actual/51.,2)
+                s1 = np.round(-1*self.banks[1].leafs_actual/51.,2)
+
+            elif export_expected == True:
+                s2 = np.round(self.banks[0].leafs_expected/51.,2)
+                s1 = np.round(-1*self.banks[1].leafs_expected/51.,2)
+
+            x1 = np.where(s2-s1 < 0,s1+(s2-s1)/2.,s1)
+            x2 = np.where(s2-s1 < 0,s2-(s2-s1)/2.,s2)
+
+            x11 = np.where(x2-x1 < 0.6,x1-(0.6-(x2-x1))/2.,x1)
+            x22 = np.where(x2-x1 < 0.6,x2+(0.6-(x2-x1))/2.,x2)
+
+
+            return np.append(x22,x11,axis=1)
 
     def pick_controlpoints(self,criterion="angle"):
         """
@@ -602,7 +613,7 @@ class beam:
                 index.append(-1)
                 return index
 
-    def export_logbeam(self):
+    def export_logbeam(self,export_expected=False):
         """
         Beschreibung
         -----------------------------------------------------------------------
@@ -618,7 +629,7 @@ class beam:
         index = self.pick_controlpoints()
         exportbeam = copy.deepcopy(self.dicom_beam)
 
-        mlc = self.convert_mlc()
+        mlc = self.convert_mlc(export_expected)[index]
         dose = 1./25000*self.log_dose[index]
 
         exportbeam.ControlPointSequence[0].\
@@ -958,7 +969,7 @@ class plan:
 #                beam.validate_beam()
 #            self.check_plan()
 
-    def export_dynalog_plan(self,plan_name,filename):
+    def export_dynalog_plan(self,plan_name,filename,export_expected=False):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -994,8 +1005,8 @@ class plan:
             "can't export unvalidated plan.")
         exportplan = copy.deepcopy(self.dicom_data)
         for num in range(len(self.beams)):
-            exportplan.BeamSequence[num] = self.beams[num].export_logbeam()
-        exportplan.RTPlanLabel = "dyn_"+plan_name[:13]
+            exportplan.BeamSequence[num] = self.beams[num].export_logbeam(export_expected)
+        exportplan.RTPlanLabel = ("dyn_"+plan_name)[:13]
 
         ltime = time.localtime()
         study_instance = exportplan.StudyInstanceUID.split(".")
@@ -1020,7 +1031,7 @@ class plan:
 
 if __name__ == "__main__":
     from get_dicom_data import filetools as ft
-    import matplotlib.pyplot as plt
+#    import matplotlib.pyplot as plt
     banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")
     p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
     p1.construct_logbeams(banks[p1.header["plan_uid"]])

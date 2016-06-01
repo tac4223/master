@@ -25,9 +25,9 @@ class Main(QMainwindow,Ui_Mainwindow):
         self.progress.connect(self.update_bar)
 
         self.button_dicomdir.clicked.connect(self.pick_dicomdir)
-        self.edit_dicomdir.editingFinished.connect(self.changed_dicomdir)
+        self.edit_dicomdir.editingFinished.connect(self.populate_table)
         self.button_dynadir.clicked.connect(self.pick_dynadir)
-        self.edit_dynadir.editingFinished.connect(self.changed_dynadir)
+        self.edit_dynadir.editingFinished.connect(self.populate_table)
         self.button_outputdir.clicked.connect(self.pick_outputdir)
 
         self.button_plans_refresh.clicked.connect(self.populate_table)
@@ -38,35 +38,43 @@ class Main(QMainwindow,Ui_Mainwindow):
         self.banks = {}
 
     def pick_dicomdir(self):
+        """
+        Verzeichnis mit den DICOM-Dateien auswählen.
+        """
         filename = QtGui.QFileDialog.getExistingDirectory(self,\
             "DICOM-Verzeichnis")
         self.edit_dicomdir.setText(filename)
 
-        self.plans = ft.get_plans(self.edit_dicomdir.text())
-        self.populate_table()
-
-    def changed_dicomdir(self):
-        self.plans = ft.get_plans(self.edit_dicomdir.text())
-        self.populate_table()
-
-    def changed_dynadir(self):
-        self.banks = ft.get_banks(self.edit_dynadir.text())
+#        self.plans = ft.get_plans(self.edit_dicomdir.text())
         self.populate_table()
 
     def pick_dynadir(self):
+        """
+        Verzeichnis mit DynaLog Dateien auswählen.
+        """
         filename = QtGui.QFileDialog.getExistingDirectory(self,\
             "DynaLog-Verzeichnis")
         self.edit_dynadir.setText(filename)
-        self.banks = ft.get_banks(self.edit_dynadir.text())
+#        self.banks = ft.get_banks(self.edit_dynadir.text())
 
         self.populate_table()
 
     def pick_outputdir(self):
+        """
+        Verzeichnis für die erstellten, neuen Pläne.
+        """
         filename = QtGui.QFileDialog.getExistingDirectory(self,
         "Ausgabe-Verzeichnis")
         self.edit_outputdir.setText(filename)
 
-    def populate_table(self):
+    def populate_table(self,skip=False):
+        """
+        Sammelt die Pläne aus DICOM-Dir und prüft, ob in Dynadir genug Logfiles
+        für deren Rekonstruktion vorhanden sind.
+        """
+        if skip == False:
+            self.plans = ft.get_plans(self.edit_dicomdir.text())
+            self.banks = ft.get_banks(self.edit_dynadir.text())
         self.table_plans.setSortingEnabled(False)
         self.table_plans.setRowCount(len(self.plans))
 
@@ -91,11 +99,19 @@ class Main(QMainwindow,Ui_Mainwindow):
         self.table_plans.setSortingEnabled(True)
 
     def update_bar(self):
+        """
+        Funktion für Fortschrittsanzeige. Falls alle Aktionen beendet sind, wird
+        die Statusanzeige busybar wieder abgeschaltet.
+        """
         self.progressbar_export.setValue(self.progressbar_export.value()+1)
         if self.progressbar_export.value() == self.progressbar_export.maximum():
             self.busybar.setMaximum(1)
 
     def export_thread(self):
+        """
+        Schiebt die Exportvorgänge an (in eigenen Threads, damit das Hauptfenster
+        noch ansprechbar bleibt).
+        """
         self.progressbar_export.setMinimum(1)
         self.progressbar_export.setValue(1)
         self.busybar.setMaximum(0)
@@ -112,6 +128,9 @@ class Main(QMainwindow,Ui_Mainwindow):
                 raise
 
     def export(self,plan):
+        """
+        Die eigentliche Exportarbeit, die jeweils im eigenen Thread aufgerufen wird.
+        """
         delchars = "".join(c for c in map(chr, range(256)) if not c.isalnum())
 
         filename = "_".join([plan.header["patient_name"][0],plan.header["patient_name"][1],plan.header["plan_name"]])
@@ -121,7 +140,7 @@ class Main(QMainwindow,Ui_Mainwindow):
             plan.construct_logbeams(self.banks[plan.header["plan_uid"]])
             plan.validate_plan()
             os.chdir(str(self.edit_outputdir.text()))
-            plan.export_dynalog_plan(plan.header["plan_name"],filename)
+            plan.export_dynalog_plan(plan.header["plan_name"],filename,self.checkbox_exportexpected.isChecked())
             self.progress.emit()
 
         except (KeyError,IndexError,dynalog.PlanMismatchError):
