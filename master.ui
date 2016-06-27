@@ -217,6 +217,38 @@ erstellen</string>
        <string>DynaLog: Soll-Position exportieren</string>
       </property>
      </widget>
+     <widget class="QLabel" name="label">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>40</y>
+        <width>161</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Mindestgröße Dynamic Leaf Gap:</string>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignBottom|Qt::AlignLeading|Qt::AlignLeft</set>
+      </property>
+     </widget>
+     <widget class="QDoubleSpinBox" name="spinbox_leafgap">
+      <property name="geometry">
+       <rect>
+        <x>170</x>
+        <y>40</y>
+        <width>62</width>
+        <height>22</height>
+       </rect>
+      </property>
+      <property name="singleStep">
+       <double>0.010000000000000</double>
+      </property>
+      <property name="value">
+       <double>0.620000000000000</double>
+      </property>
+     </widget>
     </widget>
    </widget>
    <widget class="QGroupBox" name="box_dirs">

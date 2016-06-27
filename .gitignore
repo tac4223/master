@@ -55,3 +55,10 @@ build/bdist.win-amd64/winexe/temp/bz2.py
 packing.bat
 looptest.py
 dynastats.py
+split/plan_logic.py
+split/import_tools.py
+old/get_dicom_data.py
+old/dynalog.py
+split/gui.py
+old/dynagui.py
+split/master.ui

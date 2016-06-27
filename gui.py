@@ -6,9 +6,9 @@ Created on Mon May 02 10:23:12 2016
 """
 
 from PyQt4 import uic, QtGui, QtCore
-from get_dicom_data import filetools as ft
+from import_tools import filetools as ft
 import os
-import dynalog
+import plan_logic
 import threading
 
 Ui_Mainwindow, QMainwindow = uic.loadUiType("master.ui")
@@ -140,10 +140,10 @@ class Main(QMainwindow,Ui_Mainwindow):
             plan.construct_logbeams(self.banks[plan.header["plan_uid"]])
             plan.validate_plan()
             os.chdir(str(self.edit_outputdir.text()))
-            plan.export_dynalog_plan(plan.header["plan_name"],filename,self.checkbox_exportexpected.isChecked())
+            plan.export_dynalog_plan(plan.header["plan_name"],filename,self.checkbox_exportexpected.isChecked(),self.spinbox_leafgap.value())
             self.progress.emit()
 
-        except (KeyError,IndexError,dynalog.PlanMismatchError):
+        except (KeyError,IndexError,plan_logic.PlanMismatchError):
             raise
 
 if __name__ == "__main__":

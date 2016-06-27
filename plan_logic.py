@@ -145,187 +145,6 @@ class PlanMismatchError(DynalogMismatchError):
         return "\nPlan {0}\n{1} mismatch: {2}"\
         .format(self.plan_uid,self.key,self.msg)
 
-class leafbank:
-
-    def __init__(self,filename,side=None):
-        """
-        Parameter
-        -----------------------------------------------------------------------
-        filename : str
-            Dateiname der zu importierenden DynaLog-Datei. Erstes Zeichen des
-            Dateinamens wird als Bezeichnung der Leafbank (in der Regel A oder B)
-            verwendet.
-
-        Funktionen
-        -----------------------------------------------------------------------
-        read_data :
-            Liest Textdokument ein, trennt Header ab, ruft weitere Funktionen
-            auf
-
-        build_header :
-            Überträgt die Informationen aus dem Header in Objekteigenschaften.
-
-        build_beam :
-            Importiert Dosis und Einschaltzeiten.
-
-        build_gantry :
-            Importiert Gantrywinkel etc.
-
-        build_mlc :
-            Importiert die Leafpositionen.
-
-        Instanzvariablen
-        -----------------------------------------------------------------------
-        header : dict
-            Enthält die Schlüsselwörter und zugehörigen Werte der Headerzeilen im
-            DynaLog File
-
-        gantry_angle : ndarray
-           nthält die Gantry-Winkel des Logfiles, aufgenommen alle ~50 ms.
-
-        previous_segment : ndarray
-            Enthält den Wert der "Previous Segment Number" Spalte, in der Hoffnung
-            dass sich damit die Kontrollpunkte rekonstruieren lassen.
-
-        collimator_rotation : ndarray
-           thält die Kollimatorrotation im Zeitverlauf.
-
-        y1,y2 : ndarray
-           osition der y-Blenden.
-
-        x1, x2 : ndarray
-            Position der x-Blenden.
-
-        dose_fraction : ndarray
-            Kumulative, applizierte Dosis, von 0 bis 25000.
-
-        beam_holdoff : ndarray
-            In Situationen in denen der Beschleuniger die Bestrahlungsunterbrechnung
-            triggert, wechselt der Wert auf 1.
-
-        beam_on : ndarray
-            Wechselt auf 0 wenn Beam abgeschaltet ist.
-
-        carriage_expected : ndarray
-            Die Sollposition vom Leaf-Carriage.
-
-        carriage_actual : ndarray
-            Tatsächlich gemessene Position Leaf-Carriage.
-
-        leaf_expected : ndarray
-            Erwartete Leaf-Position.
-
-        leaf_actual : ndarray
-            Tatsächliche Leaf-Position.
-
-        Beschreibung
-        -----------------------------------------------------------------------
-        Stellt die Informationen im DynaLog-File bequem zur Verfügung. Die
-        Informationen der Headerzeilen werden komplett übernommen, die Spalten
-        des Datenteils entweder verworfen oder in Numpy-Arrays eingelesen.
-        """
-        self.header = {}
-        self.header["filename"] = filename
-
-        if side == None:
-            self.header["side"] = filename[0]
-        else:
-            self.header["side"] = side
-
-        self.read_data()
-
-    def read_data(self):
-        """
-        Beschreibung
-        -----------------------------------------------------------------------
-        Öffnet die Dynalog-Datei, teilt den Header zur weiteren Verarbeitung ab,
-        wandelt den Datenteil in ein Numpy-Array mit float-Zahlen und ruft
-        Funktionen zur weiteren Verarbeitung auf. Nimmt eine Headerlänge von
-        6 Zeilen an.
-        """
-        with open(self.header["filename"],"r") as data:
-            raw = [line.strip().split(",") for line in data.readlines()]
-
-            self.build_header(raw[:6])
-
-            data = np.array(raw[6:]).astype(float)
-            self.build_beam(data)
-            self.build_gantry(data)
-            self.build_mlc(data)
-
-    def build_header(self,raw_header):
-        """
-        Parameter
-        -----------------------------------------------------------------------
-        raw_header : list, [[str,str],...]
-            Enthält die Wertepaare der Kopfzeile als Liste.
-
-        Beschreibung
-        -----------------------------------------------------------------------
-        Erweitert das header-Dictionary um die Einträge aus den Kopfzeilen des
-        DynaLog-Files.
-        """
-        self.header["version"] = raw_header[0][0]
-        self.header["patient_name"] = raw_header[1][:-1]
-        self.header["patient_id"] = raw_header[1][-1]
-        self.header["plan_uid"] = raw_header[2][0]
-        self.header["beam_number"] = int(raw_header[2][1])
-        self.header["tolerance"] = int(raw_header[3][0])
-        self.header["leaf_count"] = int(raw_header[4][0])
-        self.header["coord_system"] = int(raw_header[5][0])
-
-    def build_gantry(self,raw_data):
-        """
-        Parameter
-        -----------------------------------------------------------------------
-        raw_data : ndarray
-            Enthält die Daten des DynaLog-Files als Array.
-
-        Beschreibung
-        -----------------------------------------------------------------------
-        Extrahiert die Werte der Gantry-bezogenen Parameter Winkel, Segment,
-        Kollimator-Rotation und Jaw-Positionen.
-        """
-        self.gantry_angle = raw_data[:,6]
-#        self.previous_segment = raw_data[:,1]
-#        self.collimator_rotation = raw_data[:,7]
-#        self.y1 = raw_data[:,8]
-#        self.y2 = raw_data[:,9]
-#        self.x1 = raw_data[:,10]
-#        self.x2 = raw_data[:,11]
-
-    def build_beam(self,raw_data):
-        """
-        Parameter
-        -----------------------------------------------------------------------
-        raw_data : ndarray
-            Enthält die Daten des DynaLog-Files als Array.
-
-        Beschreibung
-        -----------------------------------------------------------------------
-        Extrahiert Beamdaten wie kumulative Dosisfraktion und Einschaltstatus.
-        """
-        self.dose_fraction = raw_data[:,0]
-#        self.beam_holdoff = raw_data[:,2]
-#        self.beam_on = raw_data[:,3]
-
-    def build_mlc(self,raw_data):
-        """
-        Parameter
-        -----------------------------------------------------------------------
-        raw_data : ndarray
-            thält die Daten des DynaLog-Files als Array.
-
-        Beschreibung
-        -----------------------------------------------------------------------
-        Extrahiert die eigentlich spannenden Daten zu Carriage- und Leafposition,
-        Soll- und Ist-Zustand.
-        """
-#        self.carriage_expected = raw_data[:,12]
-#        self.carriage_actual = raw_data[:,13]
-        self.leafs_expected = raw_data[:,14::4]
-        self.leafs_actual = raw_data[:,15::4]
-
 class beam:
 
     def __init__(self,banks,dicom_header=None,dicom_beam=None):
@@ -482,7 +301,7 @@ class beam:
 #            ControlPointSequence[0].BeamLimitingDevicePositionSequence[2].
 #            LeafJawPositions)
 
-#       Mal eingebaut, aber am Ende nicht verwendet.
+        #derzeit nicht benötigte Daten, auskommentiert zwecks Beschleunigung.
 
         self.direction = self.dicom_beam.ControlPointSequence[0].GantryRotationDirection
 
@@ -500,6 +319,8 @@ class beam:
             self.log_gantry_angle = self.banks[0].gantry_angle/10.
             self.log_header = copy.deepcopy(self.banks[0].header)
 #            self.log_previous_segment = 1*self.banks[0].previous_segment
+            #derzeit nicht benötigte Daten, auskommentiert zwecks Beschleunigung.
+
             del self.log_header["version"]
             del self.log_header["side"]
             del self.log_header["filename"]
@@ -529,7 +350,7 @@ class beam:
         """
         return (540 - np.array(data))%360
 
-    def convert_mlc(self,export_expected=False):
+    def convert_mlc(self,export_expected=False,leafgap=0.7):
         """
         Beschreibung
         -----------------------------------------------------------------------
@@ -557,15 +378,18 @@ class beam:
                 s2 = np.round(self.banks[0].leafs_expected/51.,2)
                 s1 = np.round(-1*self.banks[1].leafs_expected/51.,2)
 
-            x1 = np.where(s2-s1 < 0,s1+(s2-s1)/2.,s1)
-            x2 = np.where(s2-s1 < 0,s2-(s2-s1)/2.,s2)
+            x1 = np.where(s2-s1 < 0,s1+(s2-s1)/2.-0.01,s1)
+            x2 = np.where(s2-s1 < 0,s2-(s2-s1)/2.+0.01,s2)
+            #sorgt dafür, dass keine negativen Feldgrößen auftauchen.
 
-            x11 = np.where(x2-x1 < 0.6,x1-(0.6-(x2-x1))/2.,x1)
-            x22 = np.where(x2-x1 < 0.6,x2+(0.6-(x2-x1))/2.,x2)
+            x11 = np.where((x2-x1 < 0.6)*(x2-x1 > 0.02),x1-(leafgap-(x2-x1))/2.,x1)
+            x22 = np.where((x2-x1 < 0.6)*(x2-x1 > 0.02),x2+(leafgap-(x2-x1))/2.,x2)
+            #Stellt sicher, dass der Dynamic Leaf Gap stets ausreichend groß
+            #für Verarbeitung in Eclipse ist. Dynamic Leafs werden angenommen,
+            #wenn der Abstand größer als 0,6 mm ist. Sicher nicht die schönste
+            #Art, diese beiden Probleme zu lösen...
 
-
-            return np.append(x22,x11,axis=1)
-
+            return np.append(x11,x22,axis=1)
     def pick_controlpoints(self,criterion="angle"):
         """
         Parameter
@@ -613,7 +437,7 @@ class beam:
                 index.append(-1)
                 return index
 
-    def export_logbeam(self,export_expected=False):
+    def export_logbeam(self,export_expected=False,leafgap=0.7):
         """
         Beschreibung
         -----------------------------------------------------------------------
@@ -629,7 +453,7 @@ class beam:
         index = self.pick_controlpoints()
         exportbeam = copy.deepcopy(self.dicom_beam)
 
-        mlc = self.convert_mlc(export_expected)[index]
+        mlc = self.convert_mlc(export_expected,leafgap)[index]
         dose = 1./25000*self.log_dose[index]
 
         exportbeam.ControlPointSequence[0].\
@@ -685,6 +509,8 @@ class beam:
 #                    self.banks[1].previous_segment):
 #                    raise LeafbankMismatchError(self.dicom_header["plan_uid"],
 #                        self.dicom_header["beam_number"],"previous segment array")
+        #derzeit nicht benötigte Daten, auskommentiert zwecks Beschleunigung.
+
         except LeafbankMismatchError:
             raise
         else:
@@ -803,9 +629,15 @@ class plan:
         Patientenname, Patienten ID und Plan Name in einem Dictionary.
         """
         self.header["plan_uid"] = self.dicom_data.SOPInstanceUID
-        self.header["patient_name"] = self.dicom_data.PatientName.split("^")
         self.header["patient_id"] = self.dicom_data.PatientID
         self.header["plan_name"] = self.dicom_data.RTPlanLabel
+
+        name = self.dicom_data.PatientName.split("^")
+        if len(name) == 1:
+            name.append("N/A")
+        if "" in name:
+            name = [n if n != "" else "N/A" for n in name]
+        self.header["patient_name"] = name
 
     def construct_logbeams(self,bank_pool=None):
         """
@@ -969,7 +801,7 @@ class plan:
 #                beam.validate_beam()
 #            self.check_plan()
 
-    def export_dynalog_plan(self,plan_name,filename,export_expected=False):
+    def export_dynalog_plan(self,plan_name,filename,export_expected=False,leafgap=0.7):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -1005,7 +837,7 @@ class plan:
             "can't export unvalidated plan.")
         exportplan = copy.deepcopy(self.dicom_data)
         for num in range(len(self.beams)):
-            exportplan.BeamSequence[num] = self.beams[num].export_logbeam(export_expected)
+            exportplan.BeamSequence[num] = self.beams[num].export_logbeam(export_expected,leafgap)
         exportplan.RTPlanLabel = ("dyn_"+plan_name)[:13]
 
         ltime = time.localtime()
@@ -1024,56 +856,56 @@ class plan:
         exportplan.ApprovalStatus = "UNAPPROVED"
         dcm.write_file(filename,exportplan)
 
-    def strip_privates(self,plan):
-        del plan[0x3287,0x1000]
-        del plan[3287,0x0010]
-        return plan
-
-if __name__ == "__main__":
-    from get_dicom_data import filetools as ft
-#    import matplotlib.pyplot as plt
-    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")
-    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
-    p1.construct_logbeams(banks[p1.header["plan_uid"]])
-    p1.validate_plan()
-
-    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")
-    p2 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")[0]
-    p2.construct_logbeams(banks[p2.header["plan_uid"]])
-    p2.validate_plan()
-#    b2_dcm = p2.beams[0].dicom_mlc.reshape((178,120))
-    b2_log = p2.beams[0].convert_mlc()
-    s2 = b2_log[0][:60]
-    s1 = b2_log[0][60:]
-
-    index = p1.beams[0].pick_controlpoints(),p1.beams[1].pick_controlpoints()
-
-    beams = p1.beams[0],p1.beams[1]
-
-#    plt.close("all")
-#    for num in range(2):
-#        plt.figure(num)
-#        plt.plot(beams[num].convert_angles(beams[num].log_gantry_angle[index[num]],"dicom"),label="DynaLog")
-#        plt.plot(beams[num].dicom_gantry_angle,label="DICOM")
-#        plt.xlabel("Control Points")
-#        plt.ylabel("Gantry Angle / Degrees")
-#        plt.title("Gantry Angle")
-#        plt.legend()
-#        plt.show()
+#    def strip_privates(self,plan):
+#        del plan[0x3287,0x1000]
+#        del plan[3287,0x0010]
+#        return plan
 #
-#        plt.figure(num+2)
-#        plt.plot(beams[num].log_dose[index[num]]/25000,label="DynaLog")
-#        plt.plot(beams[num].dicom_dose/25000,label="DICOM")
-#        plt.xlabel("Control Points")
-#        plt.ylabel("Relative Dose")
-#        plt.title("Dose")
-#        plt.legend()
-#        plt.show()
+#if __name__ == "__main__":
+#    from get_dicom_data import filetools as ft
+##    import matplotlib.pyplot as plt
+#    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")
+#    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
+#    p1.construct_logbeams(banks[p1.header["plan_uid"]])
+#    p1.validate_plan()
 #
-#        plt.figure(num+4)
-#        plt.plot((beams[num].log_dose[index[num]]-beams[num].dicom_dose)/12500.,label="Deviation from DICOM")
-#        plt.xlabel("Control Points")
-#        plt.ylabel("Absolute Error / Gy")
-#        plt.title("Deviation")
-#        plt.show()
-
+#    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")
+#    p2 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\1VMAT loose")[0]
+#    p2.construct_logbeams(banks[p2.header["plan_uid"]])
+#    p2.validate_plan()
+##    b2_dcm = p2.beams[0].dicom_mlc.reshape((178,120))
+#    b2_log = p2.beams[0].convert_mlc()
+#    s2 = b2_log[0][:60]
+#    s1 = b2_log[0][60:]
+#
+#    index = p1.beams[0].pick_controlpoints(),p1.beams[1].pick_controlpoints()
+#
+#    beams = p1.beams[0],p1.beams[1]
+#
+##    plt.close("all")
+##    for num in range(2):
+##        plt.figure(num)
+##        plt.plot(beams[num].convert_angles(beams[num].log_gantry_angle[index[num]],"dicom"),label="DynaLog")
+##        plt.plot(beams[num].dicom_gantry_angle,label="DICOM")
+##        plt.xlabel("Control Points")
+##        plt.ylabel("Gantry Angle / Degrees")
+##        plt.title("Gantry Angle")
+##        plt.legend()
+##        plt.show()
+##
+##        plt.figure(num+2)
+##        plt.plot(beams[num].log_dose[index[num]]/25000,label="DynaLog")
+##        plt.plot(beams[num].dicom_dose/25000,label="DICOM")
+##        plt.xlabel("Control Points")
+##        plt.ylabel("Relative Dose")
+##        plt.title("Dose")
+##        plt.legend()
+##        plt.show()
+##
+##        plt.figure(num+4)
+##        plt.plot((beams[num].log_dose[index[num]]-beams[num].dicom_dose)/12500.,label="Deviation from DICOM")
+##        plt.xlabel("Control Points")
+##        plt.ylabel("Absolute Error / Gy")
+##        plt.title("Deviation")
+##        plt.show()
+#
