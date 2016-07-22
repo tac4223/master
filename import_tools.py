@@ -23,18 +23,29 @@ class filetools:
         return [plan for plan in plans if (plan.arcs > 0) == True]
 
     @classmethod
-    def get_banks(self,top):
+    def get_banks(self,top,mode="plan_uid"):
         banks = []
         for root,dirs,files in os.walk(str(top)):
             for f in files:
                 if f[-3:] == "dlg":
                     filename = "\\".join([root,f])
                     banks.append(leafbank_dynalog(filename,f[0]))
-        uids = np.unique([p.header["plan_uid"] for p in banks])
         output = {}
-        for uid in uids:
-            output[uid] = list(np.array(banks)[np.where(np.array(
-            [b.header["plan_uid"] for b in banks])==uid)[0]])
+        if mode == "plan_uid":
+            uids = list(set([p.header["plan_uid"] for p in banks]))
+            for uid in uids:
+                output[uid] = list(np.array(banks)[np.where(np.array(
+                [b.header["plan_uid"] for b in banks])==uid)[0]])
+        elif mode == "patient_id":
+            pids = list(set([p.header["patient_id"] for p in banks]))
+            for pid in pids:
+                output[pid] = list(np.array(banks)[np.where(np.array(\
+                [b.header["patient_id"] for b in banks])==pid)[0]])
+        elif mode == "patient_name":
+            names = list(set([",".join(p.header["patient_name"]) for p in banks]))
+            for name in names:
+                output[name] = [bank for bank in banks if\
+                    bank.header["patient_name"] == name.split(",")]
         return output
 
 
@@ -225,4 +236,10 @@ class leafbank_dynalog:
 #        self.carriage_actual = raw_data[:,13]
         self.leafs_expected = raw_data[:,14::4]
         self.leafs_actual = raw_data[:,15::4]
+
+    def stats(self):
+        self.leafdifference = self.leafs_actual - self.leafs_expected
+        self.leafdifference_min = np.min(self.leafdifference,axis=0)
+        self.leafdifference_max = np.max(self.leafdifference,axis=0)
+        self.leafdifference_mean = np.mean(self.leafdifference,axis=0)
 

@@ -861,10 +861,10 @@ class plan:
 #        del plan[3287,0x0010]
 #        return plan
 #
-#if __name__ == "__main__":
-#    from get_dicom_data import filetools as ft
+if __name__ == "__main__":
+    from import_tools import filetools as ft
 ##    import matplotlib.pyplot as plt
-#    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")
+    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose","patient_name")
 #    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
 #    p1.construct_logbeams(banks[p1.header["plan_uid"]])
 #    p1.validate_plan()
