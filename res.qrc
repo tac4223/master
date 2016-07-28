@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="newPrefix">
+    <file>Refresh_icon.png</file>
+    <file>stats.jpg</file>
+  </qresource>
+</RCC>

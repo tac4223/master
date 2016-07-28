@@ -152,10 +152,10 @@ class leafbank_dynalog:
 
             self.build_header(raw[:6])
 
-            data = np.array(raw[6:]).astype(float)
-            self.build_beam(data)
-            self.build_gantry(data)
-            self.build_mlc(data)
+            self.raw_data = np.array(raw[6:]).astype(float)
+            self.build_beam(self.raw_data)
+            self.build_gantry(self.raw_data)
+            self.build_mlc(self.raw_data)
 
     def build_header(self,raw_header):
         """
@@ -183,6 +183,7 @@ class leafbank_dynalog:
         if "" in name:
             name = [n if n != "" else "N/A" for n in name]
         self.header["patient_name"] = name
+
     def build_gantry(self,raw_data):
         """
         Parameter
@@ -225,7 +226,7 @@ class leafbank_dynalog:
         Parameter
         -----------------------------------------------------------------------
         raw_data : ndarray
-            thält die Daten des DynaLog-Files als Array.
+            Enthält die Daten des DynaLog-Files als Array.
 
         Beschreibung
         -----------------------------------------------------------------------
@@ -239,7 +240,25 @@ class leafbank_dynalog:
 
     def stats(self):
         self.leafdifference = self.leafs_actual - self.leafs_expected
-        self.leafdifference_min = np.min(self.leafdifference,axis=0)
-        self.leafdifference_max = np.max(self.leafdifference,axis=0)
-        self.leafdifference_mean = np.mean(self.leafdifference,axis=0)
+#        self.leafdifference_min = np.min(self.leafdifference,axis=0)
+#        self.leafdifference_max = np.max(self.leafdifference,axis=0)
+#        self.leafdifference_mean = np.mean(self.leafdifference,axis=0)
+
+    def write(self,filename=None):
+        header = []
+        header.append(self.header["version"])
+        header.append(",".join(self.header["patient_name"])+","+self.header["patient_id"])
+        header.append(",".join([self.header["plan_uid"],str(self.header["beam_number"])]))
+        header.append(str(self.header["tolerance"]))
+        header.append(str(self.header["leaf_count"]))
+        header.append(str(self.header["coord_system"]))
+
+        self.raw_data[:,14::4] = self.leafs_expected
+        self.raw_data[:,15::4] = self.leafs_actual
+
+        if filename == None:
+            np.savetxt(self.header["filename"][:-4]+"_altered.dlg",self.raw_data.astype(int),delimiter=",",header="\n".join(header),comments="",fmt="%i")
+        else:
+            np.savetxt(filename,self.raw_data.astype(int),delimiter=",",header="\n".join(header),comments="",fmt="%i")
+
 

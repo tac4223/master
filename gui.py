@@ -49,6 +49,10 @@ class Main(QMainwindow,Ui_Mainwindow):
 
         self.button_stat_create.clicked.connect(self.show_stats)
 
+        self.button_stat_refresh.clicked.connect(self.stat_dir_updated)
+
+        self.dropdown_settings_statpick.currentIndexChanged.connect(self.stat_dir_updated)
+
     def pick_dicomdir(self):
         """
         Verzeichnis mit den DICOM-Dateien auswählen.
@@ -235,7 +239,9 @@ class Main(QMainwindow,Ui_Mainwindow):
 
 if __name__ == "__main__":
     import sys
-
+    import ctypes
+    myappid = 'notacompany.dynalog_inspector.1_0'
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     app = QtGui.QApplication(sys.argv)
     main = Main()
     main.show()

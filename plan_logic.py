@@ -326,7 +326,7 @@ class beam:
             del self.log_header["filename"]
 
     @classmethod
-    def convert_angles(self,data,target_coord="log"):
+    def convert_angles(self,data):
         """
         Parameter
         -----------------------------------------------------------------------
@@ -540,6 +540,7 @@ class beam:
             raise
         else:
             return True
+        return False
 
     def validate_beam(self):
         """
@@ -551,6 +552,7 @@ class beam:
             self.check_leafbank_data()
             self.check_beam_metadata()
         except BeamMismatchError:
+            self.validated = False
             raise
         else:
             self.validated = True
@@ -708,12 +710,13 @@ class plan:
                     "beam assignment","beam at index {0} of beam list"\
                     " identifies as beam {1} instead of beam {2}."\
                     .format(num,self.beams[num].log_header["beam_number"],num+1))
-            if len(self.beams) != len(self.beams):
+            if len(self.beams) != len(self.dicom_data.BeamSequence):
                 raise PlanMismatchError(self.header["plan_uid"],"beam count",
                 "beam list contains {0} entries, plan header requires {1}."\
-                .format(len(self.beams),len(self.beams)))
+                .format(len(self.beams),len(self.dicom_data.BeamSequence)))
         except PlanMismatchError:
             raise
+            return False
         else:
             return True
         return False
@@ -728,6 +731,7 @@ class plan:
         try:
             self.validated = self.check_plan()
         except PlanMismatchError:
+            self.validated = False
             raise
 
     def invalidate_plan(self):
@@ -864,8 +868,8 @@ class plan:
 if __name__ == "__main__":
     from import_tools import filetools as ft
 ##    import matplotlib.pyplot as plt
-    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose","patient_name")
-#    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
+#    banks = ft.get_banks("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose","patient_name")
+    p1 = ft.get_plans("D:\Echte Dokumente\uni\master\khdf\Yannick\systemtest\messungen\\2VMAT loose")[0]
 #    p1.construct_logbeams(banks[p1.header["plan_uid"]])
 #    p1.validate_plan()
 #
